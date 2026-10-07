@@ -50,6 +50,7 @@
       daily: {},   // "YYYY-MM-DD" -> { n: answered, c: correct, xp, met: hit the goal that day }
       xp: 0,
       bestStreak: 0,
+      subnet: { level: "medium", input: "choice", types: {} }, // types: id -> { c, w, r } like topics
       settings: { domains: subject.domains.map((d) => d.id), offTopics: [], goal: 20, examCount: 90 },
       session: null,
       history: []  // { at, mode, score, total }
@@ -60,6 +61,7 @@
     try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}")[subject.id] || {}; } catch (e) { /* ignore */ }
     const s = Object.assign(defaults(), saved);
     s.settings = Object.assign(defaults().settings, saved.settings || {});
+    s.subnet = Object.assign(defaults().subnet, saved.subnet || {});
     if (!saved.topics) backfillTopics(s);
     // Discard a saved session from an older app version or a changed question bank.
     if (s.session && (s.session.v !== 2 || s.session.ids.some((id) => !byId[id]))) s.session = null;
@@ -148,13 +150,7 @@
 
   // How well you know an objective, from your most recent answers on it.
   // `est` is smoothed toward 50% so a couple of lucky or unlucky answers don't swing it too far.
-  function topicAccuracy(tk) {
-    const ts = store.topics[tk];
-    if (!ts || !ts.r.length) return null;
-    let c = 0;
-    for (const ch of ts.r) if (ch === "1") c++;
-    return { acc: c / ts.r.length, n: ts.r.length, est: (c + 1) / (ts.r.length + 2) };
-  }
+  const topicAccuracy = (tk) => recentAccuracy(store.topics[tk]);
   function weakSpots(limit) {
     return allTopics
       .map((x) => ({ ...x, a: topicAccuracy(x.tk) }))
@@ -182,24 +178,37 @@
     s.last = ok ? 1 : 0;
     store.stats[qid] = s;
 
-    const ts = store.topics[q.tk] || { c: 0, w: 0, r: "" };
-    if (ok) ts.c++; else ts.w++;
-    ts.r = (ts.r + (ok ? "1" : "0")).slice(-RECENT);
-    store.topics[q.tk] = ts;
+    store.topics[q.tk] = pushResult(store.topics[q.tk], ok);
 
+    return { ok, justMet: recordDay(ok, xp) };
+  }
+
+  // Count an answer toward today's goal and XP. Returns true when this answer completes the daily goal.
+  function recordDay(ok, xp) {
     const key = dayKey();
     const day = store.daily[key] || (store.daily[key] = { n: 0, c: 0, xp: 0, met: false });
     day.n++;
     if (ok) day.c++;
     day.xp += xp;
     store.xp += xp;
-    let justMet = false;
-    if (!day.met && day.n >= store.settings.goal) {
-      day.met = true;
-      justMet = true;
-      store.bestStreak = Math.max(store.bestStreak, streak());
-    }
-    return { ok, justMet };
+    if (day.met || day.n < store.settings.goal) return false;
+    day.met = true;
+    store.bestStreak = Math.max(store.bestStreak, streak());
+    return true;
+  }
+
+  // Append a result to a { c, w, r } record (r = recent results, newest last).
+  function pushResult(rec, ok) {
+    rec = rec || { c: 0, w: 0, r: "" };
+    if (ok) rec.c++; else rec.w++;
+    rec.r = (rec.r + (ok ? "1" : "0")).slice(-RECENT);
+    return rec;
+  }
+  function recentAccuracy(rec) {
+    if (!rec || !rec.r.length) return null;
+    let c = 0;
+    for (const ch of rec.r) if (ch === "1") c++;
+    return { acc: c / rec.r.length, n: rec.r.length, est: (c + 1) / (rec.r.length + 2) };
   }
 
   // ---------- Question selection ----------
@@ -317,7 +326,9 @@
     s.finished = true;
     s.celebrating = false;
     const total = s.mode === "exam" ? s.ids.length : s.answers.filter(has).length;
-    const score = s.ids.filter((id, i) => s.answers[i] === byId[id].a).length;
+    const score = s.mode === "subnet"
+      ? s.results.filter((r) => r === true).length
+      : s.ids.filter((id, i) => s.answers[i] === byId[id].a).length;
     store.history.push({ at: Date.now(), mode: s.mode, score, total });
     store.history = store.history.slice(-50);
     save();
@@ -327,6 +338,16 @@
   // Leaving endless practice: drop the unanswered current question and show the summary.
   function endPractice() {
     const s = store.session;
+    if (s.mode === "subnet") {
+      if (!has(s.answers[s.index])) { s.items.pop(); s.order.pop(); }
+      if (!s.items.length) {
+        store.session = null;
+        save();
+        return go("subnet");
+      }
+      s.index = s.items.length - 1;
+      return finishSession();
+    }
     if (!has(s.answers[s.index])) {
       s.ids.pop();
       s.order.pop();
@@ -368,6 +389,12 @@
 
   function advance() {
     const s = store.session;
+    if (s.mode === "subnet") {
+      nextSubnetItem(s);
+      s.index++;
+      save();
+      return go("session");
+    }
     if (s.mode === "practice") {
       pushQuestion(s, nextPracticeId(s));
       s.index++;
@@ -393,27 +420,121 @@
     advance();
   }
 
+
+  // ---------- Subnetting practice (generated questions, see subnet.js) ----------
+  const SN = window.Subnet;
+  const subnetType = (id) => SN.TYPES.find((t) => t.id === id);
+
+  // Same idea as objectives: question types you miss come up more often.
+  function nextSubnetItem(s) {
+    const last2 = s.items.slice(-2).map((x) => x.type).reverse();
+    const types = s.focusType ? [subnetType(s.focusType)] : SN.TYPES.filter((t) => s.input === "choice" || t.typedOk || t.id === "same");
+    const weights = types.map((t) => {
+      const a = recentAccuracy(store.subnet.types[t.id]);
+      let w = 0.15 + 4 * Math.pow(1 - (a ? a.est : 0.5), 2);
+      if (!a || a.n < 3) w += 0.6;
+      if (types.length > 1 && last2[0] === t.id && last2[1] === t.id) w *= 0.2;
+      return w;
+    });
+    const item = SN.generate(weightedPick(types, weights).id, s.level);
+    s.items.push(item);
+    s.order.push(shuffle(item.c.map((_, i) => i)));
+  }
+
+  function startSubnet(focusType) {
+    const s = {
+      v: 2, mode: "subnet", label: focusType ? subnetType(focusType).name : "Subnetting",
+      ids: [], items: [], order: [], answers: [], results: [], index: 0,
+      startedAt: Date.now(), finished: false, combo: 0, bestCombo: 0, xp: 0,
+      celebrate: false, celebrating: false, showWhy: false,
+      focusType: focusType || null, level: store.subnet.level, input: store.subnet.input
+    };
+    nextSubnetItem(s);
+    store.session = s;
+    save();
+    go("session");
+  }
+
+  // `answer` is a choice index (multiple choice) or the typed text.
+  function answerSubnet(answer) {
+    const s = store.session;
+    const i = s.index;
+    if (has(s.answers[i])) return;
+    const item = s.items[i];
+    const ok = typeof answer === "number"
+      ? answer === item.a
+      : item.typed.some((t) => SN.normalize(t) === SN.normalize(answer));
+    s.answers[i] = answer;
+    s.results[i] = ok;
+    s.combo = ok ? s.combo + 1 : 0;
+    s.bestCombo = Math.max(s.bestCombo, s.combo);
+    const xp = ok ? XP_CORRECT + (s.combo >= COMBO_BONUS_AT ? COMBO_BONUS : 0) : XP_WRONG;
+    s.xp += xp;
+    s.lastXp = xp;
+    s.showWhy = false;
+    store.subnet.types[item.type] = pushResult(store.subnet.types[item.type], ok);
+    // Subnetting skill is part of the IPv4 addressing objective, so it feeds that weakness score too.
+    store.topics["1|IPv4 addressing"] = pushResult(store.topics["1|IPv4 addressing"], ok);
+    if (recordDay(ok, xp)) s.celebrate = true;
+    if (!ok && navigator.vibrate) navigator.vibrate(120);
+    save();
+    render();
+    const fb = document.getElementById("feedback");
+    if (fb) fb.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function subnetAnswerText(s, i) {
+    const a = s.answers[i];
+    if (!has(a)) return null;
+    return typeof a === "number" ? s.items[i].c[a] : a;
+  }
+
+  function askClaudeSubnet(i) {
+    const s = store.session;
+    const item = s.items[i];
+    const typed = typeof s.answers[i] === "string";
+    openClaude({
+      objective: "Networking Concepts > IPv4 addressing (subnetting: " + item.name + ")",
+      question: item.q,
+      choices: typed ? null : s.order[i].map((orig) => item.c[orig]),
+      correct: item.c[item.a],
+      chosen: subnetAnswerText(s, i),
+      explanation: item.e
+    });
+  }
+
   // ---------- Ask Claude ----------
   // Opens a new claude.ai chat with the question prefilled, so it runs on the user's own Claude plan
   // (no API key or API billing). The prompt is also copied to the clipboard in case the prefill is lost.
   function askClaude(qid, chosen, order) {
     const q = byId[qid];
     const idx = order || q.c.map((_, i) => i);
-    const wrong = has(chosen) && chosen !== q.a;
+    openClaude({
+      objective: domainName(q.d) + " > " + q.t,
+      question: q.q,
+      choices: idx.map((orig) => q.c[orig]),
+      correct: q.c[q.a],
+      chosen: has(chosen) ? q.c[chosen] : null,
+      explanation: q.e
+    });
+  }
+  // `chosen` is the text of the user's answer (null if unanswered); `choices` is null for typed answers.
+  function openClaude(x) {
+    const wrong = x.chosen != null && x.chosen !== x.correct;
     const prompt = [
       "I'm studying for the CompTIA Network+ (N10-009) exam. Help me understand this practice question more deeply.",
       "",
-      "Objective: " + domainName(q.d) + " > " + q.t,
-      "Question: " + q.q,
-      "Choices:",
-      ...idx.map((orig, i) => LETTERS[i] + ") " + q.c[orig]),
+      "Objective: " + x.objective,
+      "Question: " + x.question,
+      ...(x.choices ? ["Choices:", ...x.choices.map((c, i) => LETTERS[i] + ") " + c)] : []),
       "",
-      "Correct answer: " + q.c[q.a],
-      has(chosen) ? (wrong ? "I chose: " + q.c[chosen] : "I got it right, but I want to understand it better.") : "I didn't answer this one.",
-      "My study app's explanation: " + q.e,
+      "Correct answer: " + x.correct,
+      x.chosen == null ? "I didn't answer this one." : wrong ? "I answered: " + x.chosen : "I got it right, but I want to understand it better.",
+      "My study app's explanation: " + x.explanation,
       "",
-      "Please explain why the correct answer is right" + (wrong ? ", why my choice is wrong" : "") +
-        ", briefly why each other choice is wrong, and give me a tip to remember this for the exam."
+      "Please explain why the correct answer is right" + (wrong ? ", where my answer went wrong" : "") +
+        (x.choices ? ", briefly why each other choice is wrong," : ", walk through the method step by step,") +
+        " and give me a tip to remember this for the exam."
     ].join("\n");
     try { if (navigator.clipboard) navigator.clipboard.writeText(prompt).catch(() => {}); } catch (e) { /* ignore */ }
     window.open("https://claude.ai/new?q=" + encodeURIComponent(prompt), "_blank", "noopener");
@@ -520,8 +641,8 @@
 
       ${resumable ? `
       <div class="card stack resume">
-        <div><h2>Resume ${s.mode === "exam" ? "exam" : "review"}</h2>
-        <div class="small muted">${esc(s.label)} · question ${s.index + 1} of ${s.ids.length}</div></div>
+        <div><h2>Resume ${{ exam: "exam", review: "review", practice: "practice", subnet: "subnetting" }[s.mode]}</h2>
+        <div class="small muted">${esc(s.label)} · ${s.mode === "practice" || s.mode === "subnet" ? plural(s.answers.filter(has).length, "question") + " answered" : `question ${s.index + 1} of ${s.ids.length}`}</div></div>
         <div class="btn-row">
           <button class="btn" data-action="resume">Resume</button>
           <button class="btn secondary" data-action="discard">Discard</button>
@@ -539,6 +660,15 @@
 
       <button class="btn big" data-action="practice" ${canPractice ? "" : "disabled"}>${t.n ? "Keep practicing" : "Start practicing"}</button>
       <p class="small muted center hint">Endless practice. Keeps going until you stop, and focuses on what you get wrong.</p>
+
+      <button class="card feature" data-action="subnet-open">
+        <span class="feature-icon">🧮</span>
+        <span class="info">
+          <strong>Subnetting practice</strong>
+          <span class="small muted">Unlimited generated questions with step-by-step answers${subnetSummary()}</span>
+        </span>
+        <span class="go">›</span>
+      </button>
 
       <div class="section-title">Weak spots</div>
       <div class="card">${weakHtml}</div>
@@ -584,6 +714,12 @@
       </div>`;
   }
 
+  function subnetSummary() {
+    let c = 0, n = 0;
+    Object.values(store.subnet.types).forEach((r) => { for (const ch of r.r) { n++; if (ch === "1") c++; } });
+    return n ? ` · recent accuracy ${pct(c, n)}%` : "";
+  }
+
   function viewHistory() {
     const h = store.history.slice(-5).reverse();
     if (!h.length) return "";
@@ -593,7 +729,7 @@
         ${h.map((x) => `
           <div class="row small" style="padding:4px 0">
             <span>${new Date(x.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
-            <span class="muted">${x.mode === "exam" ? "Exam" : x.mode === "review" ? "Review" : "Practice"}</span>
+            <span class="muted">${{ exam: "Exam", review: "Review", subnet: "Subnetting" }[x.mode] || "Practice"}</span>
             <span class="spacer"></span>
             <strong style="color:${pct(x.score, x.total) >= PASS_PCT ? "var(--good)" : "var(--bad)"}">${pct(x.score, x.total)}%</strong>
             <span class="muted">${x.score}/${x.total}</span>
@@ -774,6 +910,192 @@
       ${wrongIdx.length ? `<div class="section-title">Missed</div><div class="card">${review}</div>` : ""}`;
   }
 
+
+  // ---------- Subnetting views ----------
+  function viewSubnetHub() {
+    const sub = store.subnet;
+    const t = today();
+    const typeRows = SN.TYPES.map((tp) => {
+      const a = recentAccuracy(sub.types[tp.id]);
+      const accPct = a ? Math.round(a.acc * 100) : null;
+      const color = accPct == null ? "var(--border)" : accPct >= 80 ? "var(--good)" : accPct >= 60 ? "var(--warn)" : "var(--bad)";
+      return `
+        <button class="weak" data-subnet-focus="${tp.id}">
+          <div class="info">
+            <div class="row"><span class="name">${esc(tp.name)}</span><span class="spacer"></span><span class="small muted">${accPct == null ? "not tried" : accPct + "%"}</span></div>
+            <div class="bar thin"><span style="width:${accPct || 0}%;background:${color}"></span></div>
+          </div>
+          <span class="go">›</span>
+        </button>`;
+    }).join("");
+    const sheet = SN.cheatSheet().map((r) => `<tr><td>/${r.p}</td><td>${r.mask}</td><td>${r.block}</td><td>${r.hosts}</td></tr>`).join("");
+
+    return `
+      <div class="topbar">
+        <button class="icon-btn back" data-action="home-screen" aria-label="Back to home">‹</button>
+        <div class="title"><h1>Subnetting</h1></div>
+        <div class="pill ${t.met ? "lit" : ""}" title="Day streak">🔥 ${streak()}</div>
+        <div class="pill" title="Total XP">⚡ ${store.xp}</div>
+      </div>
+
+      <div class="card stack">
+        <p class="small muted">Endless questions, generated fresh every time, so you can't memorize them. Answers are calculated, and every explanation walks through the method. Counts toward your daily goal.</p>
+        <div>
+          <div class="small muted" style="margin-bottom:6px">Difficulty</div>
+          <div class="segmented">
+            ${Object.entries(SN.LEVELS).map(([k, lv]) => `<button data-level="${k}" class="${sub.level === k ? "on" : ""}">${lv.label}<br><small class="muted">${lv.note}</small></button>`).join("")}
+          </div>
+        </div>
+        <div>
+          <div class="small muted" style="margin-bottom:6px">Answer style</div>
+          <div class="segmented">
+            <button data-input="choice" class="${sub.input === "choice" ? "on" : ""}">Multiple choice</button>
+            <button data-input="type" class="${sub.input === "type" ? "on" : ""}">Type the answer</button>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn big" data-action="subnet-start">Start subnetting</button>
+      <p class="small muted center hint">Mixes all question types and focuses on the ones you miss.</p>
+
+      <div class="section-title">Question types <span class="normal">· tap one to drill it</span></div>
+      <div class="card">${typeRows}</div>
+
+      <div class="section-title">Cheat sheet</div>
+      <div class="card">
+        <details class="sheet">
+          <summary>Show the subnetting cheat sheet</summary>
+          <ul class="small tips">
+            <li><strong>Block size</strong> = 256 − the mask value in the interesting octet (the last octet with network bits).</li>
+            <li><strong>Usable hosts</strong> = 2<sup>host bits</sup> − 2.</li>
+            <li><strong>Subnets</strong> created by borrowing <em>b</em> bits = 2<sup>b</sup>.</li>
+            <li><strong>Wildcard mask</strong> = 255 − each mask octet.</li>
+            <li>Mask octet values: 128, 192, 224, 240, 248, 252, 254, 255 (1–8 bits).</li>
+            <li>Interesting octet: /9–/16 → 2nd, /17–/24 → 3rd, /25–/30 → 4th. On an exact octet boundary (/8, /16, /24) just keep those octets and zero the rest.</li>
+          </ul>
+          <div class="table-wrap">
+            <table class="small">
+              <thead><tr><th>CIDR</th><th>Mask</th><th>Block</th><th>Hosts</th></tr></thead>
+              <tbody>${sheet}</tbody>
+            </table>
+          </div>
+        </details>
+      </div>`;
+  }
+
+  function viewSubnetQuiz() {
+    const s = store.session;
+    const i = s.index;
+    const item = s.items[i];
+    const answer = s.answers[i];
+    const answered = has(answer);
+    const ok = s.results[i];
+    const typedMode = s.input === "type" && item.typed;
+    const t = today();
+    const goal = store.settings.goal;
+
+    let body;
+    if (typedMode) {
+      const kind = item.c[0].includes(".") ? "e.g. 192.168.1.64" : "e.g. 26";
+      body = answered
+        ? `<div class="typed-result ${ok ? "good" : "bad"}"><span class="small muted">You answered</span><div class="mono">${esc(answer) || "<em>blank</em>"}</div></div>`
+        : `<form class="typed-form" id="typed-form" autocomplete="off">
+             <input id="typed" class="typed-input mono" inputmode="decimal" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${kind}" aria-label="Your answer">
+             <button class="btn" type="submit">Check</button>
+           </form>`;
+    } else {
+      body = `<div class="choices">${s.order[i].map((orig, k) => {
+        let cls = "choice";
+        if (answered) {
+          if (orig === item.a) cls += " correct";
+          else if (orig === answer) cls += " wrong";
+        }
+        return `<button class="${cls}" data-subnet-choice="${orig}" ${answered ? "disabled" : ""}>
+          <span class="letter">${LETTERS[k]}</span><span class="mono">${esc(item.c[orig])}</span></button>`;
+      }).join("")}</div>`;
+    }
+
+    let feedback = "";
+    if (answered) {
+      const praise = ["Correct!", "Nice!", "Great job!", "You got it!", "Exactly!"];
+      feedback = `
+        <div class="feedback ${ok ? "good" : "bad"}" id="feedback">
+          <div class="row">
+            <div class="verdict">${ok ? praise[s.items.length % praise.length] : "Not quite."}</div>
+            <span class="spacer"></span>
+            <span class="xp-gain">+${s.lastXp || 0} XP</span>
+          </div>
+          ${ok
+            ? (s.combo >= 3 ? `<p class="small combo-text">🔥 ${s.combo} in a row${s.combo >= COMBO_BONUS_AT ? ` · +${COMBO_BONUS} bonus XP` : ""}</p>` : "")
+            : `<p class="small"><strong>Answer:</strong> <span class="mono">${esc(item.c[item.a])}</span></p>`}
+          ${ok && !s.showWhy ? "" : `<p class="small why">${esc(item.e)}</p>`}
+          <div class="feedback-actions">
+            ${ok && !s.showWhy ? `<button class="link-btn small" data-action="why">Show the steps</button>` : ""}
+            <button class="link-btn small" data-action="ask">Ask Claude ↗</button>
+          </div>
+          <button class="btn ${ok ? "good-btn" : "bad-btn"}" data-action="next">Continue</button>
+        </div>`;
+    }
+
+    return `
+      <div class="quiz-top">
+        <button class="icon-btn" data-action="quit" aria-label="End subnetting practice">✕</button>
+        <div class="progress daily ${t.met ? "met" : ""}" title="Today's goal"><span style="width:${Math.min(100, pct(t.n, goal))}%"></span></div>
+        <span class="count small">${t.met ? "🔥" : `${t.n}/${goal}`}</span>
+        ${s.combo >= 2 ? `<span class="combo">⚡${s.combo}</span>` : ""}
+      </div>
+      <span class="chip">Subnetting · ${esc(item.name)}</span>
+      <div class="question">${esc(item.q)}</div>
+      ${body}
+      ${feedback}`;
+  }
+
+  function viewSubnetResults() {
+    const s = store.session;
+    const done = s.results.map((r, i) => i).filter((i) => has(s.results[i]));
+    const correct = done.filter((i) => s.results[i]).length;
+    const score = pct(correct, done.length);
+    const byType = SN.TYPES.map((tp) => {
+      const idx = done.filter((i) => s.items[i].type === tp.id);
+      if (!idx.length) return "";
+      const c = idx.filter((i) => s.results[i]).length;
+      return `
+        <div style="padding:6px 0">
+          <div class="row small"><span>${esc(tp.name)}</span><span class="spacer"></span><strong>${c}/${idx.length}</strong></div>
+          <div class="bar"><span style="width:${pct(c, idx.length)}%;background:${pct(c, idx.length) >= PASS_PCT ? "var(--good)" : "var(--bad)"}"></span></div>
+        </div>`;
+    }).join("");
+    const missed = done.filter((i) => !s.results[i]).map((i) => {
+      const item = s.items[i];
+      return `
+        <div class="review-item">
+          <div style="font-weight:600">${esc(item.q)}</div>
+          <div class="ans bad">Your answer: <span class="mono">${esc(subnetAnswerText(s, i) || "")}</span></div>
+          <div class="ans good">Correct: <span class="mono">${esc(item.c[item.a])}</span></div>
+          <p class="small muted" style="margin-top:4px">${esc(item.e)}</p>
+          <button class="link-btn small" data-ask-sub="${i}">Ask Claude ↗</button>
+        </div>`;
+    }).join("");
+    return `
+      <div class="card score-ring">
+        <h2>Subnetting session complete</h2>
+        <div class="stats-grid">
+          <div><div class="num">${done.length}</div><div class="lbl">Questions</div></div>
+          <div><div class="num ${score >= PASS_PCT ? "good-text" : ""}">${score}%</div><div class="lbl">Accuracy</div></div>
+          <div><div class="num">+${s.xp}</div><div class="lbl">XP</div></div>
+          <div><div class="num">${s.bestCombo}</div><div class="lbl">Best combo</div></div>
+        </div>
+        <div class="small muted">${today().met ? `🔥 Daily goal complete · ${streak()}-day streak` : `${store.settings.goal - today().n} more today to hit your goal`}</div>
+      </div>
+      <div class="section-title">By question type</div>
+      <div class="card">${byType}</div>
+      <div class="stack" style="margin-top:20px">
+        <button class="btn" data-action="subnet-again">Practice again</button>
+        <button class="btn secondary" data-action="subnet-home">Back to subnetting</button>
+      </div>
+      ${missed ? `<div class="section-title">Missed</div><div class="card">${missed}</div>` : ""}`;
+  }
+
   // ---------- Timer ----------
   let timerHandle = null;
   function timeLeft() {
@@ -797,13 +1119,18 @@
   }
 
   // ---------- Render ----------
-  let screen = "home"; // "home" | "session"
+  let screen = "home"; // "home" | "subnet" | "session"
   const expanded = new Set(); // domain ids whose objective list is open
   function render() {
     const s = store.session;
     if (screen === "session" && s) {
       if (s.mode === "exam" && !s.finished && timeLeft() <= 0) return finishSession();
-      app.innerHTML = s.finished ? viewResults() : s.celebrating ? viewCelebrate() : viewQuiz();
+      if (s.mode === "subnet") app.innerHTML = s.finished ? viewSubnetResults() : s.celebrating ? viewCelebrate() : viewSubnetQuiz();
+      else app.innerHTML = s.finished ? viewResults() : s.celebrating ? viewCelebrate() : viewQuiz();
+      const input = document.getElementById("typed");
+      if (input) input.focus();
+    } else if (screen === "subnet") {
+      app.innerHTML = viewSubnetHub();
     } else {
       screen = "home";
       app.innerHTML = viewHome();
@@ -824,6 +1151,11 @@
     const s = store.session;
 
     if (el.dataset.count) { set.examCount = Number(el.dataset.count); save(); return render(); }
+    if (el.dataset.level) { store.subnet.level = el.dataset.level; save(); return render(); }
+    if (el.dataset.input) { store.subnet.input = el.dataset.input; save(); return render(); }
+    if (el.dataset.subnetFocus) return startSubnet(el.dataset.subnetFocus);
+    if (el.dataset.subnetChoice !== undefined) return answerSubnet(Number(el.dataset.subnetChoice));
+    if (el.dataset.askSub) return askClaudeSubnet(Number(el.dataset.askSub));
     if (el.dataset.goal) { set.goal = Number(el.dataset.goal); save(); return render(); }
     if (el.dataset.choice !== undefined) return choose(Number(el.dataset.choice));
     if (el.dataset.expand) {
@@ -841,6 +1173,18 @@
     }
 
     switch (el.dataset.action) {
+      case "subnet-open":
+        return go("subnet");
+      case "home-screen":
+        return go("home");
+      case "subnet-start":
+        return startSubnet(null);
+      case "subnet-again":
+        return startSubnet(s.focusType);
+      case "subnet-home":
+        store.session = null;
+        save();
+        return go("subnet");
       case "practice":
         return startSession("practice", [], selectionLabel());
       case "exam":
@@ -862,7 +1206,7 @@
         save();
         return render();
       case "quit":
-        return s.mode === "practice" ? endPractice() : go("home");
+        return s.mode === "practice" || s.mode === "subnet" ? endPractice() : go("home");
       case "home":
         store.session = null;
         save();
@@ -890,13 +1234,14 @@
         save();
         return render();
       case "ask":
+        if (s.mode === "subnet") return askClaudeSubnet(s.index);
         return askClaude(s.ids[s.index], s.answers[s.index], s.order[s.index]);
       case "keep-going":
         s.celebrating = false;
         return advance();
       case "end":
         s.celebrating = false;
-        return s.mode === "practice" ? endPractice() : finishSession();
+        return s.mode === "practice" || s.mode === "subnet" ? endPractice() : finishSession();
       case "theme": {
         const theme = getTheme() === "dark" ? "light" : "dark";
         try { localStorage.setItem(THEME_KEY, theme); } catch (err) { /* ignore */ }
@@ -911,6 +1256,12 @@
         }
         return;
     }
+  });
+
+  app.addEventListener("submit", (e) => {
+    if (e.target.id !== "typed-form") return;
+    e.preventDefault();
+    answerSubnet(document.getElementById("typed").value.trim());
   });
 
   app.addEventListener("change", (e) => {
@@ -952,7 +1303,16 @@
   document.addEventListener("keydown", (e) => {
     const s = store.session;
     if (screen !== "session" || !s || s.finished || s.celebrating || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target.tagName === "INPUT") return; // typing an answer
     const key = e.key.toUpperCase();
+    if (s.mode === "subnet") {
+      const answered = has(s.answers[s.index]);
+      let k = "1234".indexOf(key);
+      if (k < 0) k = "ABCD".indexOf(key);
+      if (!answered && !(s.input === "type" && s.items[s.index].typed) && k >= 0 && k < s.order[s.index].length) return answerSubnet(s.order[s.index][k]);
+      if (answered && (key === "ENTER" || key === "ARROWRIGHT")) next();
+      return;
+    }
     const order = s.order[s.index];
     let i = "1234".indexOf(key);
     if (i < 0) i = "ABCD".indexOf(key);
