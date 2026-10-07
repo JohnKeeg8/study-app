@@ -24,7 +24,7 @@
     return {
       stats: {},   // qid -> { c: correct count, w: wrong count, last: 1|0 }
       flagged: {}, // qid -> true
-      settings: { domains: subject.domains.map((d) => d.id), count: 10 },
+      settings: { domains: subject.domains.map((d) => d.id), offTopics: [], count: 10 },
       session: null,
       history: []  // { at, mode, score, total }
     };
@@ -45,6 +45,7 @@
     } catch (e) { /* storage unavailable (private mode); progress just won't persist */ }
   }
   let store = load();
+  store.settings.offTopics = store.settings.offTopics || []; // added after v1 settings were saved
   // Discard a saved session if the question bank changed underneath it.
   if (store.session && store.session.ids.some((id) => !byId[id])) store.session = null;
 
@@ -67,8 +68,11 @@
   }
   function pct(n, d) { return d ? Math.round((n / d) * 100) : 0; }
 
-  function domainProgress(domainId) {
-    const qs = questions.filter((q) => domainId == null || q.d === domainId);
+  const topicKey = (d, t) => d + "|" + t;
+  const inPool = (q) => store.settings.domains.includes(q.d) && !store.settings.offTopics.includes(topicKey(q.d, q.t));
+
+  function progress(filter) {
+    const qs = questions.filter(filter);
     let seen = 0, mastered = 0, correct = 0, attempts = 0;
     qs.forEach((q) => {
       const s = store.stats[q.id];
@@ -80,12 +84,13 @@
     });
     return { total: qs.length, seen, mastered, accuracy: pct(correct, attempts), attempts };
   }
+  const domainProgress = (domainId) => progress((q) => domainId == null || q.d === domainId);
   const missedIds = () => questions.filter((q) => store.stats[q.id] && store.stats[q.id].last === 0).map((q) => q.id);
   const flaggedIds = () => questions.filter((q) => store.flagged[q.id]).map((q) => q.id);
 
-  // Weakest first: missed, then unseen, then least-recently-mastered; random within each group.
-  function pickQuestions(domains, count) {
-    const pool = questions.filter((q) => domains.includes(q.d));
+  // Practice: weakest first — missed, then unseen, then least-mastered; random within each group.
+  function pickPractice(count) {
+    const pool = questions.filter(inPool);
     const rank = (q) => {
       const s = store.stats[q.id];
       if (!s) return 1;
@@ -97,6 +102,34 @@
       .sort((a, b) => a.r - b.r)
       .slice(0, count)
       .map((x) => x.id);
+  }
+
+  // Exam: random questions, split across the selected domains by their official exam weights.
+  function pickExam(count) {
+    const pools = subject.domains
+      .map((d) => ({ d, qs: shuffle(questions.filter((q) => q.d === d.id && inPool(q)).map((q) => q.id)) }))
+      .filter((p) => p.qs.length);
+    const totalWeight = pools.reduce((n, p) => n + p.d.weight, 0);
+    // Largest-remainder allocation so the counts add up exactly.
+    pools.forEach((p) => { p.exact = (count * p.d.weight) / totalWeight; p.n = Math.floor(p.exact); });
+    let left = count - pools.reduce((n, p) => n + p.n, 0);
+    [...pools].sort((a, b) => (b.exact - b.n) - (a.exact - a.n)).forEach((p) => { if (left > 0) { p.n++; left--; } });
+    const picked = pools.flatMap((p) => p.qs.slice(0, p.n));
+    // Top up from whatever is left if a domain ran short.
+    const spare = shuffle(pools.flatMap((p) => p.qs.slice(p.n)));
+    return picked.concat(spare.slice(0, Math.max(0, count - picked.length)));
+  }
+
+  function selectionLabel() {
+    const set = store.settings;
+    const doms = subject.domains.filter((d) => set.domains.includes(d.id));
+    const partial = doms.some((d) => d.topics.some((t) => set.offTopics.includes(topicKey(d.id, t))));
+    if (doms.length === subject.domains.length && !partial) return "All domains";
+    if (doms.length === 1) {
+      const on = doms[0].topics.filter((t) => !set.offTopics.includes(topicKey(doms[0].id, t)));
+      return on.length === 1 ? on[0] : doms[0].name + (partial ? " (some objectives)" : "");
+    }
+    return doms.length + " domains" + (partial ? " (some objectives)" : "");
   }
 
   // ---------- Sessions ----------
@@ -150,18 +183,39 @@
 
     const domainRows = subject.domains.map((d) => {
       const p = domainProgress(d.id);
+      const on = set.domains.includes(d.id);
+      const offCount = d.topics.filter((t) => set.offTopics.includes(topicKey(d.id, t))).length;
+      const open = expanded.has(d.id);
+      const topicRows = open ? d.topics.map((t) => {
+        const tp = progress((q) => q.d === d.id && q.t === t);
+        const checked = on && !set.offTopics.includes(topicKey(d.id, t));
+        return `
+          <label class="topic">
+            <input type="checkbox" data-topic="${esc(topicKey(d.id, t))}" ${checked ? "checked" : ""}>
+            <div class="info">
+              <div class="row"><span>${esc(t)}</span><span class="spacer"></span><span class="small muted">${tp.mastered}/${tp.total}</span></div>
+              <div class="bar thin"><span style="width:${pct(tp.mastered, tp.total)}%"></span></div>
+            </div>
+          </label>`;
+      }).join("") : "";
       return `
-        <label class="domain">
-          <input type="checkbox" data-domain="${d.id}" ${set.domains.includes(d.id) ? "checked" : ""}>
-          <div class="info">
-            <div class="row"><span class="name">${d.id}.0 ${esc(d.name)}</span><span class="spacer"></span><span class="small muted">${d.weight}%</span></div>
-            <div class="small muted">${p.mastered}/${p.total} mastered${p.attempts ? " · " + p.accuracy + "% accuracy" : ""}</div>
-            <div class="bar"><span style="width:${pct(p.mastered, p.total)}%"></span></div>
+        <div class="domain-block">
+          <div class="domain">
+            <label class="domain-main">
+              <input type="checkbox" data-domain="${d.id}" ${on ? "checked" : ""}>
+              <div class="info">
+                <div class="row"><span class="name">${d.id}.0 ${esc(d.name)}</span><span class="spacer"></span><span class="small muted">${d.weight}%</span></div>
+                <div class="small muted">${p.mastered}/${p.total} mastered${p.attempts ? " · " + p.accuracy + "% accuracy" : ""}${on && offCount ? ` · ${d.topics.length - offCount}/${d.topics.length} objectives` : ""}</div>
+                <div class="bar"><span style="width:${pct(p.mastered, p.total)}%"></span></div>
+              </div>
+            </label>
+            <button class="icon-btn chevron ${open ? "open" : ""}" data-expand="${d.id}" aria-label="${open ? "Hide" : "Show"} objectives" aria-expanded="${open}">›</button>
           </div>
-        </label>`;
+          ${open ? `<div class="topics">${topicRows}</div>` : ""}
+        </div>`;
     }).join("");
 
-    const poolSize = questions.filter((q) => set.domains.includes(q.d)).length;
+    const poolSize = questions.filter(inPool).length;
 
     return `
       <div class="header">
@@ -189,7 +243,7 @@
         <div><div class="num">${overall.attempts ? overall.accuracy + "%" : "–"}</div><div class="lbl">Accuracy</div></div>
       </div>
 
-      <div class="section-title">Domains</div>
+      <div class="section-title">Domains <span style="text-transform:none;font-weight:400">· tap › to pick objectives</span></div>
       <div class="card">${domainRows}</div>
 
       <div class="section-title">Questions per session</div>
@@ -364,6 +418,7 @@
 
   // ---------- Render ----------
   let screen = "home"; // "home" | "session"
+  const expanded = new Set(); // domain ids whose objective list is open
   function render() {
     const s = store.session;
     if (screen === "session" && s) {
@@ -419,14 +474,18 @@
       return render();
     }
     if (el.dataset.choice !== undefined) return choose(Number(el.dataset.choice));
+    if (el.dataset.expand) {
+      const id = Number(el.dataset.expand);
+      if (expanded.has(id)) expanded.delete(id); else expanded.add(id);
+      return render();
+    }
 
     const s = store.session;
     switch (el.dataset.action) {
       case "practice":
       case "exam": {
-        const ids = pickQuestions(set.domains, set.count);
-        const label = set.domains.length === subject.domains.length ? "All domains" : set.domains.length + " domain" + (set.domains.length > 1 ? "s" : "");
-        startSession(el.dataset.action, ids, label);
+        const ids = el.dataset.action === "exam" ? pickExam(set.count) : pickPractice(set.count);
+        startSession(el.dataset.action, ids, selectionLabel());
         return go("session");
       }
       case "missed":
@@ -482,11 +541,36 @@
   });
 
   app.addEventListener("change", (e) => {
-    const d = e.target.dataset.domain;
-    if (!d) return;
-    const id = Number(d);
     const set = store.settings;
-    set.domains = e.target.checked ? [...new Set([...set.domains, id])].sort((a, b) => a - b) : set.domains.filter((x) => x !== id);
+    const { domain, topic } = e.target.dataset;
+    if (domain) {
+      const id = Number(domain);
+      if (e.target.checked) {
+        set.domains = [...new Set([...set.domains, id])].sort((a, b) => a - b);
+        // Re-checking a domain turns all of its objectives back on.
+        set.offTopics = set.offTopics.filter((k) => !k.startsWith(id + "|"));
+      } else {
+        set.domains = set.domains.filter((x) => x !== id);
+      }
+    } else if (topic) {
+      const id = Number(topic.split("|")[0]);
+      const d = subject.domains.find((x) => x.id === id);
+      if (e.target.checked) {
+        if (!set.domains.includes(id)) {
+          // Domain was off: turn it on with only this objective selected.
+          set.domains = [...set.domains, id].sort((a, b) => a - b);
+          set.offTopics = set.offTopics.filter((k) => !k.startsWith(id + "|")).concat(d.topics.map((t) => topicKey(id, t)));
+        }
+        set.offTopics = set.offTopics.filter((k) => k !== topic);
+      } else {
+        set.offTopics = [...new Set([...set.offTopics, topic])];
+        // Unchecking the last objective turns the whole domain off.
+        if (d.topics.every((t) => set.offTopics.includes(topicKey(id, t)))) {
+          set.domains = set.domains.filter((x) => x !== id);
+          set.offTopics = set.offTopics.filter((k) => !k.startsWith(id + "|"));
+        }
+      }
+    } else return;
     save();
     render();
   });
