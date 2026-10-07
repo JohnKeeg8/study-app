@@ -134,12 +134,13 @@
         c: choices(toIp(bc - 1), [toIp(bc), toIp(bc - 2), toIp(net + 1), toIp(bc + 1)], () => toIp(bc - rint(3, 9))),
         e: blockSteps(ip, p) + ` The last usable host is the broadcast − 1 = ${toIp(bc - 1)}.`, typed: [toIp(bc - 1)] };
     } },
-    { id: "range", name: "Host range", typedOk: false, gen(lv) {
+    { id: "range", name: "Host range", gen(lv) {
       const p = prefixIn(lv, null, 29), ip = hostIn(p), net = netOf(ip, p), sz = size(p), bc = net + sz - 1;
       const r = (a, b) => `${toIp(a)} – ${toIp(b)}`;
       return { q: `What is the usable host range for ${toIp(ip)}/${p}?`,
         c: choices(r(net + 1, bc - 1), [r(net, bc), r(net + 1, bc), r(net + sz + 1, bc + sz - 1), r(net + 1, net + sz / 2 - 2)], () => r(net + 2, bc - 2)),
-        e: blockSteps(ip, p) + ` Usable hosts are everything between them: ${r(net + 1, bc - 1)}.`, typed: null };
+        e: blockSteps(ip, p) + ` Usable hosts are everything between them: ${r(net + 1, bc - 1)}.`,
+        typed: [r(net + 1, bc - 1)], parts: ["First host", "Last host"] };
     } },
     { id: "same", name: "Same subnet?", typedOk: false, gen(lv) {
       const p = prefixIn(lv, null, 29), a = hostIn(p), net = netOf(a, p), sz = size(p);
@@ -164,6 +165,33 @@
         c: choices(`/${p}`, opts, () => `/${rint(8, 30)}`),
         e: `You need 2^h − 2 ≥ ${fmt(n)}. ${p < 30 ? `${31 - p} host bits give only ${fmt(usable(p + 1))}, which is too few; ` : ""}${32 - p} host bits give ${fmt(usable(p))}. 32 − ${32 - p} = /${p}.`,
         typed: [String(p)] };
+    } },
+    { id: "block", name: "Block size", gen(lv) {
+      let p;
+      do { p = prefixIn(lv); } while (p % 8 === 0); // on an octet boundary the "increment" question is ambiguous
+      const { k, maskOct, block } = blockInfo(p);
+      return { q: `Subnets of a /${p} go up in steps of what number in the ${ORD[k - 1]} octet?`,
+        c: choices(String(block), [String(block * 2), String(block / 2), String(maskOct)].filter((x) => x !== "0.5" && x !== "512"), () => String(2 ** rint(0, 7))),
+        e: `/${p} → mask ${maskOf(p)}. The ${ORD[k - 1]} octet of the mask is ${maskOct}, so the block size is 256 − ${maskOct} = ${block}. Subnets start at 0, ${block}, ${block * 2}, ${block * 3}… in that octet.`,
+        typed: [String(block)] };
+    } },
+    { id: "next", name: "Next subnet", gen(lv) {
+      const p = prefixIn(lv), sz = size(p);
+      let net;
+      do { net = netOf(baseAddress(p), p); } while (net + sz >= 2 ** 32);
+      return { q: `What is the network ID of the subnet that comes right after ${toIp(net)}/${p}?`,
+        c: choices(toIp(net + sz), [toIp(net + sz - 1), toIp(net + sz + 1), toIp(net + 2 * sz), p < 30 ? toIp(net + sz / 2) : null], () => toIp(net + sz * rint(3, 5))),
+        e: `A /${p} is ${fmt(sz)} addresses${p % 8 ? ` (block size ${blockInfo(p).block} in the ${ORD[blockInfo(p).k - 1]} octet)` : ""}. Add one block to ${toIp(net)}: the next subnet starts at ${toIp(net + sz)}. (${toIp(net + sz - 1)} is this subnet's broadcast.)`,
+        typed: [toIp(net + sz)] };
+    } },
+    { id: "fitmask", name: "Hosts needed → mask", gen(lv) {
+      const p = prefixIn(lv);
+      const lowN = p < 30 ? usable(p + 1) + 1 : 2;
+      const n = rint(lowN, usable(p));
+      return { q: `Which subnet mask (dotted decimal) gives at least ${fmt(n)} usable hosts with the least waste?`,
+        c: choices(maskOf(p), [p + 1, p - 1, p + 2].filter((x) => x >= 1 && x <= 30).map(maskOf), () => maskOf(rint(8, 30))),
+        e: `You need 2^h − 2 ≥ ${fmt(n)}. ${p < 30 ? `${31 - p} host bits give only ${fmt(usable(p + 1))}; ` : ""}${32 - p} host bits give ${fmt(usable(p))}, so the prefix is /${p}. ${maskSteps(p)}`,
+        typed: [maskOf(p)] };
     } },
     { id: "subnets", name: "Counting subnets", gen(lv) {
       const p = rint(Math.max(lv.lo, 8), Math.min(28, lv.hi - 2));
@@ -203,7 +231,7 @@
   function generate(typeId, level) {
     const t = TYPES.find((x) => x.id === typeId);
     const item = t.gen(LEVELS[level] || LEVELS.medium);
-    return Object.assign({ type: t.id, name: t.name, a: 0 }, item);
+    return Object.assign({ type: t.id, name: t.name, a: 0, parts: null }, item);
   }
 
   // Typed answers: ignore spaces, commas and slashes, so "/26", "26" and "8,190" all work.

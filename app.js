@@ -50,7 +50,7 @@
       daily: {},   // "YYYY-MM-DD" -> { n: answered, c: correct, xp, met: hit the goal that day }
       xp: 0,
       bestStreak: 0,
-      subnet: { level: "medium", input: "choice", types: {} }, // types: id -> { c, w, r } like topics
+      subnet: { level: "medium", input: "type", picked: false, types: {} }, // picked: user chose the answer style // types: id -> { c, w, r } like topics
       settings: { domains: subject.domains.map((d) => d.id), offTopics: [], goal: 20, examCount: 90 },
       session: null,
       history: []  // { at, mode, score, total }
@@ -62,6 +62,7 @@
     const s = Object.assign(defaults(), saved);
     s.settings = Object.assign(defaults().settings, saved.settings || {});
     s.subnet = Object.assign(defaults().subnet, saved.subnet || {});
+    if (!s.subnet.picked) s.subnet.input = "type"; // fill in the blank is the default unless you switched it yourself
     if (!saved.topics) backfillTopics(s);
     // Discard a saved session from an older app version or a changed question bank.
     if (s.session && (s.session.v !== 2 || s.session.ids.some((id) => !byId[id]))) s.session = null;
@@ -428,7 +429,8 @@
   // Same idea as objectives: question types you miss come up more often.
   function nextSubnetItem(s) {
     const last2 = s.items.slice(-2).map((x) => x.type).reverse();
-    const types = s.focusType ? [subnetType(s.focusType)] : SN.TYPES.filter((t) => s.input === "choice" || t.typedOk || t.id === "same");
+    // Fill-in-the-blank sessions leave out the yes/no type.
+    const types = s.focusType ? [subnetType(s.focusType)] : SN.TYPES.filter((t) => s.input === "choice" || t.typedOk);
     const weights = types.map((t) => {
       const a = recentAccuracy(store.subnet.types[t.id]);
       let w = 0.15 + 4 * Math.pow(1 - (a ? a.est : 0.5), 2);
@@ -949,8 +951,8 @@
         <div>
           <div class="small muted" style="margin-bottom:6px">Answer style</div>
           <div class="segmented">
+            <button data-input="type" class="${sub.input === "type" ? "on" : ""}">Fill in the blank</button>
             <button data-input="choice" class="${sub.input === "choice" ? "on" : ""}">Multiple choice</button>
-            <button data-input="type" class="${sub.input === "type" ? "on" : ""}">Type the answer</button>
           </div>
         </div>
       </div>
@@ -997,10 +999,13 @@
     let body;
     if (typedMode) {
       const kind = item.c[0].includes(".") ? "e.g. 192.168.1.64" : "e.g. 26";
+      const inputs = item.parts
+        ? item.parts.map((label, k) => `<label class="small muted">${esc(label)}<input id="${k ? "typed-2" : "typed"}" class="typed-input mono" inputmode="decimal" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${k ? "e.g. 192.168.1.94" : "e.g. 192.168.1.65"}"></label>`).join("")
+        : `<input id="typed" class="typed-input mono" inputmode="decimal" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${kind}" aria-label="Your answer">`;
       body = answered
         ? `<div class="typed-result ${ok ? "good" : "bad"}"><span class="small muted">You answered</span><div class="mono">${esc(answer) || "<em>blank</em>"}</div></div>`
         : `<form class="typed-form" id="typed-form" autocomplete="off">
-             <input id="typed" class="typed-input mono" inputmode="decimal" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${kind}" aria-label="Your answer">
+             ${inputs}
              <button class="btn" type="submit">Check</button>
            </form>`;
     } else {
@@ -1152,7 +1157,7 @@
 
     if (el.dataset.count) { set.examCount = Number(el.dataset.count); save(); return render(); }
     if (el.dataset.level) { store.subnet.level = el.dataset.level; save(); return render(); }
-    if (el.dataset.input) { store.subnet.input = el.dataset.input; save(); return render(); }
+    if (el.dataset.input) { store.subnet.input = el.dataset.input; store.subnet.picked = true; save(); return render(); }
     if (el.dataset.subnetFocus) return startSubnet(el.dataset.subnetFocus);
     if (el.dataset.subnetChoice !== undefined) return answerSubnet(Number(el.dataset.subnetChoice));
     if (el.dataset.askSub) return askClaudeSubnet(Number(el.dataset.askSub));
@@ -1261,7 +1266,10 @@
   app.addEventListener("submit", (e) => {
     if (e.target.id !== "typed-form") return;
     e.preventDefault();
-    answerSubnet(document.getElementById("typed").value.trim());
+    const first = document.getElementById("typed").value.trim();
+    const second = document.getElementById("typed-2");
+    // Two-part answers (host range) are compared in the same "first – last" form the generator uses.
+    answerSubnet(second ? first + " – " + second.value.trim() : first);
   });
 
   app.addEventListener("change", (e) => {
