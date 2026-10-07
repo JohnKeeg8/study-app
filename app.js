@@ -11,7 +11,8 @@
   const XP_WRONG = 1;
   const COMBO_BONUS_AT = 5;  // from the 5th correct answer in a row, each correct answer earns bonus XP
   const COMBO_BONUS = 5;
-  const MISSED_SHARE = 0.5;  // share of practice questions drawn from ones you missed in earlier sessions
+  const REVIEW_SHARE = 0.5;  // share of practice questions drawn from reviews that are due (incl. earlier misses)
+  const INTERVALS = [1, 3, 7, 16, 35, 90]; // spaced repetition: days until the next review after each correct answer
   const RECENT = 20;         // how many recent answers per objective decide how well you know it
 
   const subject = window.SUBJECTS[0];
@@ -50,7 +51,11 @@
       daily: {},   // "YYYY-MM-DD" -> { n: answered, c: correct, xp, met: hit the goal that day }
       xp: 0,
       bestStreak: 0,
-      subnet: { level: "medium", input: "type", picked: false, types: {} }, // picked: user chose the answer style // types: id -> { c, w, r } like topics
+      // Drill sections. picked: the user chose the answer style themselves; types/cards: { c, w, r } records.
+      subnet: { level: "medium", input: "type", picked: false, types: {} },
+      ports: { input: "type", picked: false, scope: "core", types: {}, cards: {} },
+      classes: { input: "type", picked: false, types: {}, cards: {} },
+      srs: {},     // spaced repetition: question id or drill key -> { box: 0–6, due: "YYYY-MM-DD" } // types: id -> { c, w, r } like topics
       settings: { domains: subject.domains.map((d) => d.id), offTopics: [], goal: 20, examCount: 90 },
       session: null,
       history: []  // { at, mode, score, total }
@@ -61,8 +66,10 @@
     try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}")[subject.id] || {}; } catch (e) { /* ignore */ }
     const s = Object.assign(defaults(), saved);
     s.settings = Object.assign(defaults().settings, saved.settings || {});
-    s.subnet = Object.assign(defaults().subnet, saved.subnet || {});
-    if (!s.subnet.picked) s.subnet.input = "type"; // fill in the blank is the default unless you switched it yourself
+    ["subnet", "ports", "classes"].forEach((k) => {
+      s[k] = Object.assign(defaults()[k], saved[k] || {});
+      if (!s[k].picked) s[k].input = "type"; // fill in the blank is the default unless you switched it yourself
+    });
     if (!saved.topics) backfillTopics(s);
     // Discard a saved session from an older app version or a changed question bank.
     if (s.session && (s.session.v !== 2 || s.session.ids.some((id) => !byId[id]))) s.session = null;
@@ -180,6 +187,7 @@
     store.stats[qid] = s;
 
     store.topics[q.tk] = pushResult(store.topics[q.tk], ok);
+    srsUpdate(qid, ok);
 
     return { ok, justMet: recordDay(ok, xp) };
   }
@@ -196,6 +204,29 @@
     day.met = true;
     store.bestStreak = Math.max(store.bestStreak, streak());
     return true;
+  }
+
+  // Spaced repetition: each correct answer pushes the next review further out (1, 3, 7, 16, 35, 90 days);
+  // a miss makes it due again (it still won't repeat within the same session).
+  function srsUpdate(key, ok) {
+    const r = store.srs[key] || { box: 0, due: dayKey() };
+    if (ok) {
+      r.box = Math.min(r.box + 1, INTERVALS.length);
+      r.due = addDays(dayKey(), INTERVALS[r.box - 1]);
+    } else {
+      r.box = 0;
+      r.due = dayKey();
+    }
+    store.srs[key] = r;
+  }
+  // A question you've seen is due if you missed it, its review date has arrived, or it was answered
+  // before scheduling existed.
+  function isDue(q) {
+    const st = store.stats[q.id];
+    if (!st) return false;
+    if (st.last === 0) return true;
+    const r = store.srs[q.id];
+    return !r || r.due <= dayKey();
   }
 
   // Append a result to a { c, w, r } record (r = recent results, newest last).
@@ -231,13 +262,15 @@
     return w;
   }
 
-  // Within an objective: missed questions first (from earlier sessions — a question is never
-  // repeated within the same session), then unseen, then the least mastered.
+  // Within an objective: earlier misses first, then reviews that are due, then unseen questions, and
+  // last, ones you know that aren't due yet (longer intervals sort later). Nothing repeats within a session.
   function questionRank(q) {
     const s = store.stats[q.id];
     if (!s) return 1;
     if (s.last === 0) return 0;
-    return 2 + s.c / (s.c + s.w + 1);
+    const r = store.srs[q.id];
+    if (!r || r.due <= dayKey()) return 0.5;
+    return 3 + r.box;
   }
 
   function nextPracticeId(s) {
@@ -246,12 +279,11 @@
     const lastTopics = s.ids.slice(-2).reverse().map((id) => byId[id].tk);
     const asked = new Set(s.ids);
 
-    // About half the time, bring back a question you missed in an earlier session (weakest objectives first),
-    // until they've all been seen again.
-    if (Math.random() < MISSED_SHARE) {
+    // About half the time, take a review that's due: earlier misses count double, weaker objectives come first.
+    if (Math.random() < REVIEW_SHARE) {
       const inScope = new Set(topics);
-      const missed = questions.filter((q) => inScope.has(q.tk) && !asked.has(q.id) && store.stats[q.id] && store.stats[q.id].last === 0);
-      if (missed.length) return weightedPick(missed, missed.map((q) => topicWeight(q.tk, lastTopics))).id;
+      const due = questions.filter((q) => inScope.has(q.tk) && !asked.has(q.id) && isDue(q));
+      if (due.length) return weightedPick(due, due.map((q) => topicWeight(q.tk, lastTopics) * (store.stats[q.id].last === 0 ? 2 : 1))).id;
     }
 
     const tk = weightedPick(topics, topics.map((t) => topicWeight(t, lastTopics)));
@@ -327,7 +359,7 @@
     s.finished = true;
     s.celebrating = false;
     const total = s.mode === "exam" ? s.ids.length : s.answers.filter(has).length;
-    const score = s.mode === "subnet"
+    const score = isDrill(s.mode)
       ? s.results.filter((r) => r === true).length
       : s.ids.filter((id, i) => s.answers[i] === byId[id].a).length;
     store.history.push({ at: Date.now(), mode: s.mode, score, total });
@@ -339,12 +371,13 @@
   // Leaving endless practice: drop the unanswered current question and show the summary.
   function endPractice() {
     const s = store.session;
-    if (s.mode === "subnet") {
+    if (isDrill(s.mode)) {
       if (!has(s.answers[s.index])) { s.items.pop(); s.order.pop(); }
       if (!s.items.length) {
+        currentDrill = s.mode;
         store.session = null;
         save();
-        return go("subnet");
+        return go("drill");
       }
       s.index = s.items.length - 1;
       return finishSession();
@@ -390,8 +423,8 @@
 
   function advance() {
     const s = store.session;
-    if (s.mode === "subnet") {
-      nextSubnetItem(s);
+    if (isDrill(s.mode)) {
+      nextDrillItem(s);
       s.index++;
       save();
       return go("session");
@@ -422,15 +455,28 @@
   }
 
 
-  // ---------- Subnetting practice (generated questions, see subnet.js) ----------
+  // ---------- Drills: subnetting (generated, see subnet.js), ports & IP classes (decks, see drills.js) ----------
   const SN = window.Subnet;
-  const subnetType = (id) => SN.TYPES.find((t) => t.id === id);
+  const DRILLS = {
+    subnet: {
+      id: "subnet", title: "Subnetting", icon: "🧮", TYPES: SN.TYPES, topic: "1|IPv4 addressing",
+      objective: "Networking Concepts > IPv4 addressing (subnetting)",
+      blurb: "Endless questions, generated fresh every time, so you can't memorize them. Answers are calculated, and every explanation walks through the method."
+    },
+    ports: window.Drills.ports,
+    classes: window.Drills.classes
+  };
+  const DRILL_IDS = ["subnet", "ports", "classes"];
+  const isDrill = (mode) => DRILL_IDS.includes(mode);
+  const drillType = (drill, id) => DRILLS[drill].TYPES.find((t) => t.id === id);
+  const canType = (t) => (t.typedOk !== undefined ? t.typedOk : t.typed);
+  const drillKey = (drill, cardId, typeId) => drill + ":" + cardId + ":" + typeId;
 
-  // Same idea as objectives: question types you miss come up more often.
+  // Subnetting: question types you miss come up more often.
   function nextSubnetItem(s) {
     const last2 = s.items.slice(-2).map((x) => x.type).reverse();
     // Fill-in-the-blank sessions leave out the yes/no type.
-    const types = s.focusType ? [subnetType(s.focusType)] : SN.TYPES.filter((t) => s.input === "choice" || t.typedOk);
+    const types = s.focusType ? [drillType("subnet", s.focusType)] : SN.TYPES.filter((t) => s.input === "choice" || t.typedOk);
     const weights = types.map((t) => {
       const a = recentAccuracy(store.subnet.types[t.id]);
       let w = 0.15 + 4 * Math.pow(1 - (a ? a.est : 0.5), 2);
@@ -443,29 +489,96 @@
     s.order.push(shuffle(item.c.map((_, i) => i)));
   }
 
-  function startSubnet(focusType) {
+  // Every card+question-type pair in the current scope (what a deck session can ask).
+  function deckPairs(drill, focusType) {
+    const deck = DRILLS[drill];
+    const cards = deck.cards(store[drill]);
+    const pairs = [];
+    cards.forEach((card) => deck.TYPES.forEach((t) => {
+      if ((focusType && t.id !== focusType) || !t.applies(card)) return;
+      pairs.push({ card, t, key: drillKey(drill, card.id, t.id) });
+    }));
+    return { pairs, cards };
+  }
+  function deckDueCounts(drill) {
+    const today = dayKey();
+    let due = 0, fresh = 0;
+    deckPairs(drill).pairs.forEach((p) => {
+      const r = store.srs[p.key];
+      if (!r) fresh++;
+      else if (r.due <= today) due++;
+    });
+    return { due, fresh };
+  }
+
+  // Ports & classes: spaced repetition per card+question type. Due reviews (earlier misses first) beat new
+  // material, which beats reviewing ahead; weaker question types come up more; nothing repeats in a session.
+  function nextDeckItem(s) {
+    const st = store[s.mode];
+    const { pairs, cards } = deckPairs(s.mode, s.focusType);
+    const today = dayKey();
+    const asked = new Set(s.items.map((x) => x.key));
+    const last = s.items[s.items.length - 1];
+    let pool = pairs.filter((p) => !asked.has(p.key));
+    if (!pool.length) pool = pairs.filter((p) => !last || p.key !== last.key);
+    if (!pool.length) pool = pairs;
+    const weights = pool.map((p) => {
+      const r = store.srs[p.key];
+      const a = recentAccuracy(st.types[p.t.id]);
+      let w = !r ? 2 : r.due <= today ? (r.box === 0 ? 6 : 4) : 0.25;
+      w *= 0.6 + 2 * (1 - (a ? a.est : 0.5));
+      if (s.input === "type" && !p.t.typed) w *= 0.35; // fill-in sessions lean on typed questions
+      if (last && last.card === p.card.id) w *= 0.2;
+      return w;
+    });
+    const p = weightedPick(pool, weights);
+    const item = Object.assign({ type: p.t.id, name: p.t.name, card: p.card.id, key: p.key, a: 0, parts: null }, p.t.gen(p.card, cards));
+    item.typed = p.t.typed && (item.accept || item.acceptNums) ? true : null;
+    s.items.push(item);
+    s.order.push(shuffle(item.c.map((_, i) => i)));
+  }
+
+  function nextDrillItem(s) {
+    if (s.mode === "subnet") nextSubnetItem(s);
+    else nextDeckItem(s);
+  }
+
+  function startDrill(drill, focusType) {
+    const st = store[drill];
     const s = {
-      v: 2, mode: "subnet", label: focusType ? subnetType(focusType).name : "Subnetting",
+      v: 2, mode: drill, label: focusType ? drillType(drill, focusType).name : DRILLS[drill].title,
       ids: [], items: [], order: [], answers: [], results: [], index: 0,
       startedAt: Date.now(), finished: false, combo: 0, bestCombo: 0, xp: 0,
       celebrate: false, celebrating: false, showWhy: false,
-      focusType: focusType || null, level: store.subnet.level, input: store.subnet.input
+      focusType: focusType || null, level: st.level, input: st.input
     };
-    nextSubnetItem(s);
+    nextDrillItem(s);
     store.session = s;
     save();
     go("session");
   }
 
+  // Typed answers: number answers (ports, ranges) compare the set of numbers typed, in any separator style;
+  // text answers compare after normalizing spaces, commas and similar.
+  function typedCorrect(item, answer, drill) {
+    if (item.acceptNums) {
+      const got = (String(answer).match(/\d+/g) || []).map(Number).sort((a, b) => a - b);
+      return item.acceptNums.some((set) => {
+        const want = [...set].sort((a, b) => a - b);
+        return want.length === got.length && want.every((v, i) => v === got[i]);
+      });
+    }
+    const norm = drill === "subnet" ? SN.normalize : window.Drills.normalize;
+    return (item.accept || item.typed).some((t) => norm(t) === norm(answer));
+  }
+
   // `answer` is a choice index (multiple choice) or the typed text.
-  function answerSubnet(answer) {
+  function answerDrill(answer) {
     const s = store.session;
     const i = s.index;
     if (has(s.answers[i])) return;
     const item = s.items[i];
-    const ok = typeof answer === "number"
-      ? answer === item.a
-      : item.typed.some((t) => SN.normalize(t) === SN.normalize(answer));
+    const ok = typeof answer === "number" ? answer === item.a : typedCorrect(item, answer, s.mode);
     s.answers[i] = answer;
     s.results[i] = ok;
     s.combo = ok ? s.combo + 1 : 0;
@@ -474,9 +587,15 @@
     s.xp += xp;
     s.lastXp = xp;
     s.showWhy = false;
-    store.subnet.types[item.type] = pushResult(store.subnet.types[item.type], ok);
-    // Subnetting skill is part of the IPv4 addressing objective, so it feeds that weakness score too.
-    store.topics["1|IPv4 addressing"] = pushResult(store.topics["1|IPv4 addressing"], ok);
+    const st = store[s.mode];
+    st.types[item.type] = pushResult(st.types[item.type], ok);
+    if (item.card) {
+      st.cards[item.card] = pushResult(st.cards[item.card], ok);
+      srsUpdate(item.key, ok);
+    }
+    // Drill results also feed the matching exam objective's weak-spot score.
+    const tk = DRILLS[s.mode].topic;
+    store.topics[tk] = pushResult(store.topics[tk], ok);
     if (recordDay(ok, xp)) s.celebrate = true;
     if (!ok && navigator.vibrate) navigator.vibrate(120);
     save();
@@ -485,22 +604,22 @@
     if (fb) fb.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
-  function subnetAnswerText(s, i) {
+  function drillAnswerText(s, i) {
     const a = s.answers[i];
     if (!has(a)) return null;
     return typeof a === "number" ? s.items[i].c[a] : a;
   }
 
-  function askClaudeSubnet(i) {
+  function askClaudeDrill(i) {
     const s = store.session;
     const item = s.items[i];
     const typed = typeof s.answers[i] === "string";
     openClaude({
-      objective: "Networking Concepts > IPv4 addressing (subnetting: " + item.name + ")",
+      objective: DRILLS[s.mode].objective + " – " + item.name,
       question: item.q,
       choices: typed ? null : s.order[i].map((orig) => item.c[orig]),
       correct: item.c[item.a],
-      chosen: subnetAnswerText(s, i),
+      chosen: drillAnswerText(s, i),
       explanation: item.e
     });
   }
@@ -578,6 +697,7 @@
     const canPractice = practiceTopics(null).length > 0;
     const poolSize = questions.filter(inPool).length;
     const weak = weakSpots(3);
+    const dueReviews = questions.filter((q) => inPool(q) && isDue(q)).length;
 
     const goalText = t.met
       ? `Done for today. Come back tomorrow to make it ${plural(st + 1, "day")}.`
@@ -643,8 +763,8 @@
 
       ${resumable ? `
       <div class="card stack resume">
-        <div><h2>Resume ${{ exam: "exam", review: "review", practice: "practice", subnet: "subnetting" }[s.mode]}</h2>
-        <div class="small muted">${esc(s.label)} · ${s.mode === "practice" || s.mode === "subnet" ? plural(s.answers.filter(has).length, "question") + " answered" : `question ${s.index + 1} of ${s.ids.length}`}</div></div>
+        <div><h2>Resume ${{ exam: "exam", review: "review", practice: "practice", subnet: "subnetting", ports: "ports", classes: "IP classes" }[s.mode]}</h2>
+        <div class="small muted">${esc(s.label)} · ${s.mode === "practice" || isDrill(s.mode) ? plural(s.answers.filter(has).length, "question") + " answered" : `question ${s.index + 1} of ${s.ids.length}`}</div></div>
         <div class="btn-row">
           <button class="btn" data-action="resume">Resume</button>
           <button class="btn secondary" data-action="discard">Discard</button>
@@ -656,6 +776,7 @@
         <div class="goal-info">
           <h2>${t.met ? "Daily goal complete! 🎉" : "Daily goal"}</h2>
           <div class="small muted">${goalText}</div>
+          ${dueReviews ? `<div class="small due-line">📚 ${plural(dueReviews, "review")} due in practice</div>` : ""}
           ${weekStrip()}
         </div>
       </div>
@@ -663,14 +784,16 @@
       <button class="btn big" data-action="practice" ${canPractice ? "" : "disabled"}>${t.n ? "Keep practicing" : "Start practicing"}</button>
       <p class="small muted center hint">Endless practice. Keeps going until you stop, and focuses on what you get wrong.</p>
 
-      <button class="card feature" data-action="subnet-open">
-        <span class="feature-icon">🧮</span>
-        <span class="info">
-          <strong>Subnetting practice</strong>
-          <span class="small muted">Unlimited generated questions with step-by-step answers${subnetSummary()}</span>
-        </span>
-        <span class="go">›</span>
-      </button>
+      <div class="section-title">Memorization drills</div>
+      ${DRILL_IDS.map((id) => `
+        <button class="card feature" data-drill-open="${id}">
+          <span class="feature-icon">${DRILLS[id].icon}</span>
+          <span class="info">
+            <strong>${esc(DRILLS[id].title)}</strong>
+            <span class="small muted">${{ subnet: "Unlimited generated questions with step-by-step answers", ports: "Port numbers, TCP/UDP, what each protocol does", classes: "Classes A–E, private ranges, special addresses" }[id]}${drillSummary(id)}</span>
+          </span>
+          <span class="go">›</span>
+        </button>`).join("")}
 
       <div class="section-title">Weak spots</div>
       <div class="card">${weakHtml}</div>
@@ -716,12 +839,6 @@
       </div>`;
   }
 
-  function subnetSummary() {
-    let c = 0, n = 0;
-    Object.values(store.subnet.types).forEach((r) => { for (const ch of r.r) { n++; if (ch === "1") c++; } });
-    return n ? ` · recent accuracy ${pct(c, n)}%` : "";
-  }
-
   function viewHistory() {
     const h = store.history.slice(-5).reverse();
     if (!h.length) return "";
@@ -731,7 +848,7 @@
         ${h.map((x) => `
           <div class="row small" style="padding:4px 0">
             <span>${new Date(x.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
-            <span class="muted">${{ exam: "Exam", review: "Review", subnet: "Subnetting" }[x.mode] || "Practice"}</span>
+            <span class="muted">${{ exam: "Exam", review: "Review", subnet: "Subnetting", ports: "Ports", classes: "IP classes" }[x.mode] || "Practice"}</span>
             <span class="spacer"></span>
             <strong style="color:${pct(x.score, x.total) >= PASS_PCT ? "var(--good)" : "var(--bad)"}">${pct(x.score, x.total)}%</strong>
             <span class="muted">${x.score}/${x.total}</span>
@@ -913,58 +1030,29 @@
   }
 
 
-  // ---------- Subnetting views ----------
-  function viewSubnetHub() {
-    const sub = store.subnet;
-    const t = today();
-    const typeRows = SN.TYPES.map((tp) => {
-      const a = recentAccuracy(sub.types[tp.id]);
-      const accPct = a ? Math.round(a.acc * 100) : null;
-      const color = accPct == null ? "var(--border)" : accPct >= 80 ? "var(--good)" : accPct >= 60 ? "var(--warn)" : "var(--bad)";
+  // ---------- Drill views ----------
+  const accColor = (p) => (p == null ? "var(--border)" : p >= 80 ? "var(--good)" : p >= 60 ? "var(--warn)" : "var(--bad)");
+  function cardLabel(drill, c) {
+    if (drill === "ports") return `${c.name} · ${c.ports.join("/")}`;
+    return c.kind === "class" ? `Class ${c.id}` : c.name;
+  }
+
+  function drillSummary(drill) {
+    let c = 0, n = 0;
+    Object.values(store[drill].types).forEach((r) => { for (const ch of r.r) { n++; if (ch === "1") c++; } });
+    const parts = [];
+    if (drill !== "subnet") {
+      const { due } = deckDueCounts(drill);
+      if (due) parts.push(`${due} due for review`);
+    }
+    if (n) parts.push(`recent accuracy ${pct(c, n)}%`);
+    return parts.length ? " · " + parts.join(" · ") : "";
+  }
+
+  function drillReference(drill) {
+    if (drill === "subnet") {
+      const sheet = SN.cheatSheet().map((r) => `<tr><td>/${r.p}</td><td>${r.mask}</td><td>${r.block}</td><td>${r.hosts}</td></tr>`).join("");
       return `
-        <button class="weak" data-subnet-focus="${tp.id}">
-          <div class="info">
-            <div class="row"><span class="name">${esc(tp.name)}</span><span class="spacer"></span><span class="small muted">${accPct == null ? "not tried" : accPct + "%"}</span></div>
-            <div class="bar thin"><span style="width:${accPct || 0}%;background:${color}"></span></div>
-          </div>
-          <span class="go">›</span>
-        </button>`;
-    }).join("");
-    const sheet = SN.cheatSheet().map((r) => `<tr><td>/${r.p}</td><td>${r.mask}</td><td>${r.block}</td><td>${r.hosts}</td></tr>`).join("");
-
-    return `
-      <div class="topbar">
-        <button class="icon-btn back" data-action="home-screen" aria-label="Back to home">‹</button>
-        <div class="title"><h1>Subnetting</h1></div>
-        <div class="pill ${t.met ? "lit" : ""}" title="Day streak">🔥 ${streak()}</div>
-        <div class="pill" title="Total XP">⚡ ${store.xp}</div>
-      </div>
-
-      <div class="card stack">
-        <p class="small muted">Endless questions, generated fresh every time, so you can't memorize them. Answers are calculated, and every explanation walks through the method. Counts toward your daily goal.</p>
-        <div>
-          <div class="small muted" style="margin-bottom:6px">Difficulty</div>
-          <div class="segmented">
-            ${Object.entries(SN.LEVELS).map(([k, lv]) => `<button data-level="${k}" class="${sub.level === k ? "on" : ""}">${lv.label}<br><small class="muted">${lv.note}</small></button>`).join("")}
-          </div>
-        </div>
-        <div>
-          <div class="small muted" style="margin-bottom:6px">Answer style</div>
-          <div class="segmented">
-            <button data-input="type" class="${sub.input === "type" ? "on" : ""}">Fill in the blank</button>
-            <button data-input="choice" class="${sub.input === "choice" ? "on" : ""}">Multiple choice</button>
-          </div>
-        </div>
-      </div>
-
-      <button class="btn big" data-action="subnet-start">Start subnetting</button>
-      <p class="small muted center hint">Mixes all question types and focuses on the ones you miss.</p>
-
-      <div class="section-title">Question types <span class="normal">· tap one to drill it</span></div>
-      <div class="card">${typeRows}</div>
-
-      <div class="section-title">Cheat sheet</div>
-      <div class="card">
         <details class="sheet">
           <summary>Show the subnetting cheat sheet</summary>
           <ul class="small tips">
@@ -981,12 +1069,129 @@
               <tbody>${sheet}</tbody>
             </table>
           </div>
-        </details>
-      </div>`;
+        </details>`;
+    }
+    if (drill === "ports") {
+      const deck = DRILLS.ports;
+      const rows = deck.rows(deck.cards(store.ports)).map((r) => `<tr><td class="mono">${r.port}</td><td><strong>${esc(r.name)}</strong></td><td>${r.tx}</td><td class="wrap">${esc(r.use)}</td></tr>`).join("");
+      return `
+        <details class="sheet">
+          <summary>Show the ports table</summary>
+          <div class="table-wrap">
+            <table class="small ref">
+              <thead><tr><th>Port</th><th>Protocol</th><th>Transport</th><th>What it does</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </details>`;
+    }
+    const deck = DRILLS.classes;
+    const cls = deck.classRows().map((c) => `<tr><td><strong>${c.id}</strong></td><td>${c.range[0]}–${c.range[1]}</td><td class="mono">${c.bits}</td><td>${c.mask ? "/" + c.prefix : "–"}</td><td class="wrap">${esc(c.use)}</td></tr>`).join("");
+    const priv = deck.classRows().filter((c) => c.priv).map((c) => `<li>Class ${c.id}: <span class="mono">${c.privCidr}</span> (${c.priv})</li>`).join("");
+    const special = deck.specialRows().map((c) => `<li><span class="mono">${c.block}</span>: ${esc(c.use)}</li>`).join("");
+    return `
+      <details class="sheet">
+        <summary>Show the address class table</summary>
+        <div class="table-wrap">
+          <table class="small ref">
+            <thead><tr><th>Class</th><th>1st octet</th><th>Bits</th><th>Mask</th><th>Used for</th></tr></thead>
+            <tbody>${cls}</tbody>
+          </table>
+        </div>
+        <p class="small" style="margin-top:12px"><strong>Private (RFC 1918) ranges</strong></p>
+        <ul class="small tips">${priv}</ul>
+        <p class="small"><strong>Special addresses</strong></p>
+        <ul class="small tips">${special}</ul>
+      </details>`;
   }
 
-  function viewSubnetQuiz() {
+  function viewDrillHub(drill) {
+    const d = DRILLS[drill];
+    const st = store[drill];
+    const t = today();
+    const typeRows = d.TYPES.map((tp) => {
+      const a = recentAccuracy(st.types[tp.id]);
+      const accPct = a ? Math.round(a.acc * 100) : null;
+      return `
+        <button class="weak" data-drill-focus="${tp.id}">
+          <div class="info">
+            <div class="row"><span class="name">${esc(tp.name)}</span>${canType(tp) ? "" : `<span class="tag">choice</span>`}<span class="spacer"></span><span class="small muted">${accPct == null ? "not tried" : accPct + "%"}</span></div>
+            <div class="bar thin"><span style="width:${accPct || 0}%;background:${accColor(accPct)}"></span></div>
+          </div>
+          <span class="go">›</span>
+        </button>`;
+    }).join("");
+
+    let settings = "";
+    if (drill === "subnet") {
+      settings = `
+        <div>
+          <div class="small muted" style="margin-bottom:6px">Difficulty</div>
+          <div class="segmented">
+            ${Object.entries(SN.LEVELS).map(([k, lv]) => `<button data-level="${k}" class="${st.level === k ? "on" : ""}">${lv.label}<br><small class="muted">${lv.note}</small></button>`).join("")}
+          </div>
+        </div>`;
+    } else if (drill === "ports") {
+      const core = d.CARDS.filter((p) => p.core).length;
+      settings = `
+        <div>
+          <div class="small muted" style="margin-bottom:6px">Which ports</div>
+          <div class="segmented">
+            <button data-scope="core" class="${st.scope === "core" ? "on" : ""}">Exam objectives<br><small class="muted">${core} protocols</small></button>
+            <button data-scope="all" class="${st.scope === "all" ? "on" : ""}">+ Other common<br><small class="muted">${d.CARDS.length} protocols</small></button>
+          </div>
+        </div>`;
+    }
+
+    let progressCard = "";
+    if (drill !== "subnet") {
+      const { due, fresh } = deckDueCounts(drill);
+      const weak = d.cards(st)
+        .map((c) => ({ c, a: recentAccuracy(st.cards[c.id]) }))
+        .filter((x) => x.a && x.a.acc < 0.8)
+        .sort((a, b) => a.a.est - b.a.est)
+        .slice(0, 5);
+      progressCard = `
+        <div class="card stack" style="margin-top:12px">
+          <div class="row"><span>📚 <strong>${due}</strong> due for review</span><span class="spacer"></span><span class="small muted">${fresh} not started yet</span></div>
+          ${weak.length ? `<div class="small muted">Needs work: ${weak.map((x) => `<span class="pill-sm">${esc(cardLabel(drill, x.c))} · ${Math.round(x.a.acc * 100)}%</span>`).join(" ")}</div>` : ""}
+        </div>`;
+    }
+
+    return `
+      <div class="topbar">
+        <button class="icon-btn back" data-action="home-screen" aria-label="Back to home">‹</button>
+        <div class="title"><h1>${esc(d.title)}</h1></div>
+        <div class="pill ${t.met ? "lit" : ""}" title="Day streak">🔥 ${streak()}</div>
+        <div class="pill" title="Total XP">⚡ ${store.xp}</div>
+      </div>
+
+      <div class="card stack">
+        <p class="small muted">${esc(d.blurb)} Counts toward your daily goal.</p>
+        ${settings}
+        <div>
+          <div class="small muted" style="margin-bottom:6px">Answer style</div>
+          <div class="segmented">
+            <button data-input="type" class="${st.input === "type" ? "on" : ""}">Fill in the blank</button>
+            <button data-input="choice" class="${st.input === "choice" ? "on" : ""}">Multiple choice</button>
+          </div>
+        </div>
+      </div>
+      ${progressCard}
+
+      <button class="btn big" data-action="drill-start">Start</button>
+      <p class="small muted center hint">${drill === "subnet" ? "Mixes all question types and focuses on the ones you miss." : "Spaced repetition: reviews come back after 1, 3, 7, 16, 35, then 90 days. Misses come back next session."}</p>
+
+      <div class="section-title">Question types <span class="normal">· tap one to drill it</span></div>
+      <div class="card">${typeRows}</div>
+
+      <div class="section-title">Reference</div>
+      <div class="card">${drillReference(drill)}</div>`;
+  }
+
+  function viewDrillQuiz() {
     const s = store.session;
+    const d = DRILLS[s.mode];
     const i = s.index;
     const item = s.items[i];
     const answer = s.answers[i];
@@ -995,13 +1200,15 @@
     const typedMode = s.input === "type" && item.typed;
     const t = today();
     const goal = store.settings.goal;
+    const numeric = !!item.acceptNums || /^[\d./ –-]+$/.test(item.c[0]);
+    const kb = numeric ? `inputmode="decimal"` : `inputmode="text"`;
 
     let body;
     if (typedMode) {
-      const kind = item.c[0].includes(".") ? "e.g. 192.168.1.64" : "e.g. 26";
+      const kind = item.c[0].includes(".") ? "e.g. 192.168.1.64" : numeric ? "e.g. 26" : "Type your answer";
       const inputs = item.parts
-        ? item.parts.map((label, k) => `<label class="small muted">${esc(label)}<input id="${k ? "typed-2" : "typed"}" class="typed-input mono" inputmode="decimal" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${k ? "e.g. 192.168.1.94" : "e.g. 192.168.1.65"}"></label>`).join("")
-        : `<input id="typed" class="typed-input mono" inputmode="decimal" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${kind}" aria-label="Your answer">`;
+        ? item.parts.map((label, k) => `<label class="small muted">${esc(label)}<input id="${k ? "typed-2" : "typed"}" class="typed-input mono" ${kb} autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${s.mode === "subnet" ? (k ? "e.g. 192.168.1.94" : "e.g. 192.168.1.65") : ""}"></label>`).join("")
+        : `<input id="typed" class="typed-input mono" ${kb} autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${kind}" aria-label="Your answer">`;
       body = answered
         ? `<div class="typed-result ${ok ? "good" : "bad"}"><span class="small muted">You answered</span><div class="mono">${esc(answer) || "<em>blank</em>"}</div></div>`
         : `<form class="typed-form" id="typed-form" autocomplete="off">
@@ -1015,8 +1222,8 @@
           if (orig === item.a) cls += " correct";
           else if (orig === answer) cls += " wrong";
         }
-        return `<button class="${cls}" data-subnet-choice="${orig}" ${answered ? "disabled" : ""}>
-          <span class="letter">${LETTERS[k]}</span><span class="mono">${esc(item.c[orig])}</span></button>`;
+        return `<button class="${cls}" data-drill-choice="${orig}" ${answered ? "disabled" : ""}>
+          <span class="letter">${LETTERS[k]}</span><span${s.mode === "subnet" ? ` class="mono"` : ""}>${esc(item.c[orig])}</span></button>`;
       }).join("")}</div>`;
     }
 
@@ -1035,7 +1242,7 @@
             : `<p class="small"><strong>Answer:</strong> <span class="mono">${esc(item.c[item.a])}</span></p>`}
           ${ok && !s.showWhy ? "" : `<p class="small why">${esc(item.e)}</p>`}
           <div class="feedback-actions">
-            ${ok && !s.showWhy ? `<button class="link-btn small" data-action="why">Show the steps</button>` : ""}
+            ${ok && !s.showWhy ? `<button class="link-btn small" data-action="why">${s.mode === "subnet" ? "Show the steps" : "Why?"}</button>` : ""}
             <button class="link-btn small" data-action="ask">Ask Claude ↗</button>
           </div>
           <button class="btn ${ok ? "good-btn" : "bad-btn"}" data-action="next">Continue</button>
@@ -1044,23 +1251,24 @@
 
     return `
       <div class="quiz-top">
-        <button class="icon-btn" data-action="quit" aria-label="End subnetting practice">✕</button>
+        <button class="icon-btn" data-action="quit" aria-label="End ${esc(d.title)} practice">✕</button>
         <div class="progress daily ${t.met ? "met" : ""}" title="Today's goal"><span style="width:${Math.min(100, pct(t.n, goal))}%"></span></div>
         <span class="count small">${t.met ? "🔥" : `${t.n}/${goal}`}</span>
         ${s.combo >= 2 ? `<span class="combo">⚡${s.combo}</span>` : ""}
       </div>
-      <span class="chip">Subnetting · ${esc(item.name)}</span>
+      <span class="chip">${esc(d.title)} · ${esc(item.name)}</span>
       <div class="question">${esc(item.q)}</div>
       ${body}
       ${feedback}`;
   }
 
-  function viewSubnetResults() {
+  function viewDrillResults() {
     const s = store.session;
+    const d = DRILLS[s.mode];
     const done = s.results.map((r, i) => i).filter((i) => has(s.results[i]));
     const correct = done.filter((i) => s.results[i]).length;
     const score = pct(correct, done.length);
-    const byType = SN.TYPES.map((tp) => {
+    const byType = d.TYPES.map((tp) => {
       const idx = done.filter((i) => s.items[i].type === tp.id);
       if (!idx.length) return "";
       const c = idx.filter((i) => s.results[i]).length;
@@ -1075,15 +1283,15 @@
       return `
         <div class="review-item">
           <div style="font-weight:600">${esc(item.q)}</div>
-          <div class="ans bad">Your answer: <span class="mono">${esc(subnetAnswerText(s, i) || "")}</span></div>
+          <div class="ans bad">Your answer: <span class="mono">${esc(drillAnswerText(s, i) || "")}</span></div>
           <div class="ans good">Correct: <span class="mono">${esc(item.c[item.a])}</span></div>
           <p class="small muted" style="margin-top:4px">${esc(item.e)}</p>
-          <button class="link-btn small" data-ask-sub="${i}">Ask Claude ↗</button>
+          <button class="link-btn small" data-ask-drill="${i}">Ask Claude ↗</button>
         </div>`;
     }).join("");
     return `
       <div class="card score-ring">
-        <h2>Subnetting session complete</h2>
+        <h2>${esc(d.title)} session complete</h2>
         <div class="stats-grid">
           <div><div class="num">${done.length}</div><div class="lbl">Questions</div></div>
           <div><div class="num ${score >= PASS_PCT ? "good-text" : ""}">${score}%</div><div class="lbl">Accuracy</div></div>
@@ -1095,8 +1303,8 @@
       <div class="section-title">By question type</div>
       <div class="card">${byType}</div>
       <div class="stack" style="margin-top:20px">
-        <button class="btn" data-action="subnet-again">Practice again</button>
-        <button class="btn secondary" data-action="subnet-home">Back to subnetting</button>
+        <button class="btn" data-action="drill-again">Practice again</button>
+        <button class="btn secondary" data-action="drill-home">Back to ${esc(d.title.toLowerCase())}</button>
       </div>
       ${missed ? `<div class="section-title">Missed</div><div class="card">${missed}</div>` : ""}`;
   }
@@ -1124,18 +1332,19 @@
   }
 
   // ---------- Render ----------
-  let screen = "home"; // "home" | "subnet" | "session"
+  let screen = "home"; // "home" | "drill" | "session"
+  let currentDrill = "subnet"; // which drill hub is open
   const expanded = new Set(); // domain ids whose objective list is open
   function render() {
     const s = store.session;
     if (screen === "session" && s) {
       if (s.mode === "exam" && !s.finished && timeLeft() <= 0) return finishSession();
-      if (s.mode === "subnet") app.innerHTML = s.finished ? viewSubnetResults() : s.celebrating ? viewCelebrate() : viewSubnetQuiz();
+      if (isDrill(s.mode)) app.innerHTML = s.finished ? viewDrillResults() : s.celebrating ? viewCelebrate() : viewDrillQuiz();
       else app.innerHTML = s.finished ? viewResults() : s.celebrating ? viewCelebrate() : viewQuiz();
       const input = document.getElementById("typed");
       if (input) input.focus();
-    } else if (screen === "subnet") {
-      app.innerHTML = viewSubnetHub();
+    } else if (screen === "drill") {
+      app.innerHTML = viewDrillHub(currentDrill);
     } else {
       screen = "home";
       app.innerHTML = viewHome();
@@ -1157,10 +1366,12 @@
 
     if (el.dataset.count) { set.examCount = Number(el.dataset.count); save(); return render(); }
     if (el.dataset.level) { store.subnet.level = el.dataset.level; save(); return render(); }
-    if (el.dataset.input) { store.subnet.input = el.dataset.input; store.subnet.picked = true; save(); return render(); }
-    if (el.dataset.subnetFocus) return startSubnet(el.dataset.subnetFocus);
-    if (el.dataset.subnetChoice !== undefined) return answerSubnet(Number(el.dataset.subnetChoice));
-    if (el.dataset.askSub) return askClaudeSubnet(Number(el.dataset.askSub));
+    if (el.dataset.scope) { store.ports.scope = el.dataset.scope; save(); return render(); }
+    if (el.dataset.input) { store[currentDrill].input = el.dataset.input; store[currentDrill].picked = true; save(); return render(); }
+    if (el.dataset.drillOpen) { currentDrill = el.dataset.drillOpen; return go("drill"); }
+    if (el.dataset.drillFocus) return startDrill(currentDrill, el.dataset.drillFocus);
+    if (el.dataset.drillChoice !== undefined) return answerDrill(Number(el.dataset.drillChoice));
+    if (el.dataset.askDrill) return askClaudeDrill(Number(el.dataset.askDrill));
     if (el.dataset.goal) { set.goal = Number(el.dataset.goal); save(); return render(); }
     if (el.dataset.choice !== undefined) return choose(Number(el.dataset.choice));
     if (el.dataset.expand) {
@@ -1178,18 +1389,17 @@
     }
 
     switch (el.dataset.action) {
-      case "subnet-open":
-        return go("subnet");
       case "home-screen":
         return go("home");
-      case "subnet-start":
-        return startSubnet(null);
-      case "subnet-again":
-        return startSubnet(s.focusType);
-      case "subnet-home":
+      case "drill-start":
+        return startDrill(currentDrill, null);
+      case "drill-again":
+        return startDrill(s.mode, s.focusType);
+      case "drill-home":
+        currentDrill = s.mode;
         store.session = null;
         save();
-        return go("subnet");
+        return go("drill");
       case "practice":
         return startSession("practice", [], selectionLabel());
       case "exam":
@@ -1211,7 +1421,7 @@
         save();
         return render();
       case "quit":
-        return s.mode === "practice" || s.mode === "subnet" ? endPractice() : go("home");
+        return s.mode === "practice" || isDrill(s.mode) ? endPractice() : go("home");
       case "home":
         store.session = null;
         save();
@@ -1239,14 +1449,14 @@
         save();
         return render();
       case "ask":
-        if (s.mode === "subnet") return askClaudeSubnet(s.index);
+        if (isDrill(s.mode)) return askClaudeDrill(s.index);
         return askClaude(s.ids[s.index], s.answers[s.index], s.order[s.index]);
       case "keep-going":
         s.celebrating = false;
         return advance();
       case "end":
         s.celebrating = false;
-        return s.mode === "practice" || s.mode === "subnet" ? endPractice() : finishSession();
+        return s.mode === "practice" || isDrill(s.mode) ? endPractice() : finishSession();
       case "theme": {
         const theme = getTheme() === "dark" ? "light" : "dark";
         try { localStorage.setItem(THEME_KEY, theme); } catch (err) { /* ignore */ }
@@ -1269,7 +1479,7 @@
     const first = document.getElementById("typed").value.trim();
     const second = document.getElementById("typed-2");
     // Two-part answers (host range) are compared in the same "first – last" form the generator uses.
-    answerSubnet(second ? first + " – " + second.value.trim() : first);
+    answerDrill(second ? first + " – " + second.value.trim() : first);
   });
 
   app.addEventListener("change", (e) => {
@@ -1313,11 +1523,11 @@
     if (screen !== "session" || !s || s.finished || s.celebrating || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.target.tagName === "INPUT") return; // typing an answer
     const key = e.key.toUpperCase();
-    if (s.mode === "subnet") {
+    if (isDrill(s.mode)) {
       const answered = has(s.answers[s.index]);
       let k = "1234".indexOf(key);
       if (k < 0) k = "ABCD".indexOf(key);
-      if (!answered && !(s.input === "type" && s.items[s.index].typed) && k >= 0 && k < s.order[s.index].length) return answerSubnet(s.order[s.index][k]);
+      if (!answered && !(s.input === "type" && s.items[s.index].typed) && k >= 0 && k < s.order[s.index].length) return answerDrill(s.order[s.index][k]);
       if (answered && (key === "ENTER" || key === "ARROWRIGHT")) next();
       return;
     }

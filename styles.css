@@ -317,3 +317,9 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
 .sheet td:last-child, .sheet th:last-child { text-align: right; }
 .sheet th { color: var(--muted); font-weight: 600; }
 .typed-form label { display: flex; flex-direction: column; gap: 4px; }
+.tag { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 6px; background: var(--card-2); color: var(--muted); }
+.pill-sm { display: inline-block; margin: 2px 2px 0 0; padding: 2px 8px; border-radius: 999px; background: var(--bad-soft); color: var(--text); font-size: 0.78rem; }
+.due-line { margin-top: 4px; color: var(--accent); font-weight: 600; }
+.sheet .ref td.wrap { white-space: normal; min-width: 140px; }
+.sheet .ref td { vertical-align: top; }
+.sheet .ref td:last-child, .sheet .ref th:last-child { text-align: left; }

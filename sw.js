@@ -1,5 +1,5 @@
 // Bump CACHE whenever app files or questions change so phones pick up the update.
-const CACHE = "study-app-v6";
+const CACHE = "study-app-v7";
 const ASSETS = [
   "./",
   "index.html",
@@ -7,6 +7,7 @@ const ASSETS = [
   "app.js",
   "data/netplus.js",
   "subnet.js",
+  "drills.js",
   "manifest.webmanifest",
   "icons/icon.svg",
   "icons/icon-192.png",
