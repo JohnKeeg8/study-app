@@ -8,7 +8,7 @@ It's a Progressive Web App (plain HTML/CSS/JS; nothing to install to run it). On
 
 - **Daily goal and streak**: answer 20 questions a day (adjustable: 10/20/30/50) to keep your 🔥 streak going. A ring and a 7-day strip show progress, with a celebration when you hit the goal.
 - **XP and combos**: +10 XP per correct answer, +5 bonus per answer once you're 5 in a row.
-- **Endless adaptive practice**: keeps going until you tap ✕. Each objective gets a weakness score from your last 20 answers on it, and objectives you struggle with come up far more often. New objectives get explored, and mastered ones still return occasionally for review. A missed question comes back 3–6 questions later.
+- **Endless adaptive practice**: keeps going until you tap ✕. Each objective gets a weakness score from your last 20 answers on it, and objectives you struggle with come up far more often. New objectives get explored, and mastered ones still return occasionally for review. Questions are never repeated within a session; questions you missed come back in your next session, making up about half of it until you've seen them again.
 - **Instant feedback**: wrong answers show the correct answer and why. Correct answers have a "Why?" link.
 - **Ask Claude ↗**: opens a new chat on claude.ai with the question, your answer, and the explanation already filled in, for a deeper explanation. It uses your own Claude account, so there are no API keys or extra charges. The prompt is also copied to your clipboard in case the prefill doesn't come through.
 - **Weak spots**: the home screen lists your weakest objectives. Tap one to drill only that objective.

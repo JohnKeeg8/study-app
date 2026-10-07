@@ -11,9 +11,8 @@
   const XP_WRONG = 1;
   const COMBO_BONUS_AT = 5;  // from the 5th correct answer in a row, each correct answer earns bonus XP
   const COMBO_BONUS = 5;
+  const MISSED_SHARE = 0.5;  // share of practice questions drawn from ones you missed in earlier sessions
   const RECENT = 20;         // how many recent answers per objective decide how well you know it
-  const RETRY_GAP = [3, 6];  // a missed question comes back 3–6 questions later
-  const AVOID_REPEAT = 40;   // otherwise, don't repeat a question within this many in one session
 
   const subject = window.SUBJECTS[0];
   const app = document.getElementById("app");
@@ -222,7 +221,8 @@
     return w;
   }
 
-  // Within an objective: missed questions first, then unseen, then the least mastered.
+  // Within an objective: missed questions first (from earlier sessions — a question is never
+  // repeated within the same session), then unseen, then the least mastered.
   function questionRank(q) {
     const s = store.stats[q.id];
     if (!s) return 1;
@@ -231,16 +231,22 @@
   }
 
   function nextPracticeId(s) {
-    const pos = s.ids.length;
-    const prev = s.ids[pos - 1];
-    const due = s.retry.findIndex((r) => r.due <= pos && r.id !== prev);
-    if (due >= 0) return s.retry.splice(due, 1)[0].id;
-
+    const prev = s.ids[s.ids.length - 1];
     const topics = practiceTopics(s);
     const lastTopics = s.ids.slice(-2).reverse().map((id) => byId[id].tk);
+    const asked = new Set(s.ids);
+
+    // About half the time, bring back a question you missed in an earlier session (weakest objectives first),
+    // until they've all been seen again.
+    if (Math.random() < MISSED_SHARE) {
+      const inScope = new Set(topics);
+      const missed = questions.filter((q) => inScope.has(q.tk) && !asked.has(q.id) && store.stats[q.id] && store.stats[q.id].last === 0);
+      if (missed.length) return weightedPick(missed, missed.map((q) => topicWeight(q.tk, lastTopics))).id;
+    }
+
     const tk = weightedPick(topics, topics.map((t) => topicWeight(t, lastTopics)));
-    const recent = new Set(s.ids.slice(-AVOID_REPEAT));
-    let pool = questionsByTopic[tk].filter((q) => !recent.has(q.id));
+    let pool = questionsByTopic[tk].filter((q) => !asked.has(q.id));
+    // Only if every question in this objective was already asked this session, allow repeats.
     if (!pool.length) pool = questionsByTopic[tk].filter((q) => q.id !== prev);
     if (!pool.length) pool = questionsByTopic[tk];
     return pool
@@ -286,7 +292,7 @@
     const s = Object.assign({
       v: 2, mode, label, ids: [], order: [], answers: [], index: 0,
       startedAt: Date.now(), timeLimit: 0, finished: false,
-      combo: 0, bestCombo: 0, xp: 0, retry: [], celebrate: false, celebrating: false, showWhy: false
+      combo: 0, bestCombo: 0, xp: 0, celebrate: false, celebrating: false, showWhy: false
     }, extra || {});
     ids.forEach((id) => pushQuestion(s, id));
     if (mode === "exam") s.timeLimit = ids.length * 60;
@@ -353,11 +359,6 @@
     s.lastXp = xp;
     s.showWhy = false;
     if (recordAnswer(q.id, orig, xp).justMet) s.celebrate = true;
-    // Bring a missed question back a few questions later (at most twice per session).
-    if (!ok && s.mode === "practice" && s.ids.filter((id) => id === q.id).length < 3) {
-      const gap = RETRY_GAP[0] + Math.floor(Math.random() * (RETRY_GAP[1] - RETRY_GAP[0] + 1));
-      s.retry.push({ id: q.id, due: s.ids.length + gap });
-    }
     if (!ok && navigator.vibrate) navigator.vibrate(120);
     save();
     render();
