@@ -1,0 +1,33 @@
+module.exports = {
+  domain: 1,
+  topic: "IPv4 addressing",
+  questions: [
+    ["What does VLSM allow a network administrator to do?",
+      ["Use different subnet mask lengths within the same network to fit each subnet's size", "Use only classful masks", "Assign IPv6 addresses to IPv4 hosts", "Combine VLANs into one subnet"],
+      "Variable Length Subnet Masking sizes each subnet to its needs, for example a /30 for WAN links and a /24 for users, which saves address space."],
+    ["What does CIDR notation such as 192.168.1.0/24 represent?",
+      ["The number of network bits in the subnet mask", "The number of hosts on the network", "The VLAN ID", "The number of subnets"],
+      "Classless Inter-Domain Routing writes the mask as a prefix length. /24 = 24 network bits = 255.255.255.0."],
+    ["Combining 192.168.0.0/24 through 192.168.3.0/24 into a single routing entry gives which summary route?",
+      ["192.168.0.0/22", "192.168.0.0/23", "192.168.0.0/24", "192.168.0.0/16"],
+      "Four contiguous /24s fit into a /22 (24 − 2 bits = 4 networks). This route summarization (supernetting) is made possible by CIDR."],
+    ["What is the default subnet mask for a Class B address?",
+      ["255.255.0.0", "255.0.0.0", "255.255.255.0", "255.255.255.255"],
+      "Classful defaults: Class A /8 (255.0.0.0), Class B /16 (255.255.0.0), Class C /24 (255.255.255.0)."],
+    ["Why can't 127.0.0.1 be assigned to a host's network interface for communication with other hosts?",
+      ["The 127.0.0.0/8 range is reserved for loopback testing within the host", "It is a multicast address", "It is a broadcast address", "It is an APIPA address"],
+      "Loopback traffic never leaves the host. Pinging 127.0.0.1 tests the local TCP/IP stack."],
+    ["Which technology lets hosts with RFC 1918 private addresses reach the internet?",
+      ["NAT/PAT on the edge router or firewall", "APIPA", "Loopback", "Multicast"],
+      "Private addresses aren't routable on the internet, so NAT translates them to a public address at the edge."],
+    ["A network needs 6 subnets from 192.168.10.0/24. How many bits must be borrowed and what is the new prefix?",
+      ["3 bits, /27", "2 bits, /26", "4 bits, /28", "6 bits, /30"],
+      "2^3 = 8 subnets, which covers 6. 2 bits only give 4. Borrowing 3 bits from /24 gives /27."],
+    ["Using VLSM, an admin assigns a /30 to each point-to-point router link. Why?",
+      ["It provides exactly two usable addresses, wasting none", "It is the only mask routers support", "It provides 30 usable hosts", "It enables multicast"],
+      "A /30 has 4 addresses: network, two hosts, and broadcast. That's perfect for a link with one router at each end."],
+    ["What is 0.0.0.0 used for when a host starts a DHCP request?",
+      ["As the source address because the host doesn't have an IP yet", "As the broadcast destination", "As the default gateway", "As the loopback address"],
+      "The DHCP Discover uses source 0.0.0.0 and destination 255.255.255.255. In routing tables, 0.0.0.0/0 means the default route."]
+  ]
+};
