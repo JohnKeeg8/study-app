@@ -1369,9 +1369,11 @@
   // Minimal Markdown for lessons: ## and ### headings, paragraphs, - / 1. lists (one level of nesting),
   // | tables |, > callouts, **bold**, *italic*, `code`. Text is escaped before formatting.
   function inlineMd(text) {
-    return esc(text).split("`").map((part, i) => (i % 2
-      ? `<code>${part}</code>`
-      : part.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, "$1<em>$2</em>"))).join("");
+    // Code spans become placeholders first, so **bold `code` text** works and * inside code stays literal.
+    const codes = [];
+    return esc(text).replace(/`([^`]*)`/g, (m, c) => `\u0000${codes.push(c) - 1}\u0000`)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, "$1<em>$2</em>")
+      .replace(/\u0000(\d+)\u0000/g, (m, n) => `<code>${codes[n]}</code>`);
   }
   function renderMd(src) {
     const lines = src.split("\n");
