@@ -1,13 +1,13 @@
 module.exports = {
   "Star and hub-and-spoke": [
     ["What is the main weakness of a star topology?",
-      ["The central switch is a single point of failure", "One cable break takes down every device", "It needs the most cabling of any topology", "Devices can't be added easily"],
+      ["The central switch is a single point of failure", "One cable break takes down every device on the LAN", "It needs more cabling than any other topology", "Adding a device means rewiring the existing ones"],
       "If the center fails, everything connected to it loses connectivity."],
     ["In a hub-and-spoke WAN, how does traffic get from one branch to another?",
       ["Through the hub site", "Directly over a branch-to-branch link", "Through the internet only", "It can't"],
       "Spokes connect only to the hub, so branch traffic hairpins through it."],
     ["Why might a company choose hub and spoke for its WAN?",
-      ["It's cheap and simple, with central control", "It gives the most redundancy", "It removes all latency", "It needs no central site"],
+      ["It's cheap and simple, with central control", "It gives the most redundancy of any WAN design", "Branches can reach each other with no extra latency", "It removes the hub as a single point of failure"],
       "Fewer links and central management keep costs down."]
   ],
   "Mesh": [
@@ -18,7 +18,7 @@ module.exports = {
       ["Full mesh", "Star", "Hub and spoke", "Bus"],
       "Every node has a direct link to every other node."],
     ["A company meshes only its three data centers and connects small offices to one of them. What is this?",
-      ["Partial mesh", "Full mesh", "Bus", "Ring"],
+      ["Partial mesh", "Full mesh", "Point-to-multipoint", "Ring"],
       "Only critical nodes are meshed."],
     ["How many links does a full mesh of 4 sites need?",
       ["6", "4", "8", "12"],
@@ -29,7 +29,7 @@ module.exports = {
       ["Point-to-point", "Point-to-multipoint", "Full mesh", "Hybrid"],
       "Point-to-point links join exactly two endpoints."],
     ["One central wireless antenna serves several remote buildings. Which topology is this?",
-      ["Point-to-multipoint", "Point-to-point", "Full mesh", "Bus"],
+      ["Point-to-multipoint", "Point-to-point", "Wireless full mesh", "Bus"],
       "One site talking to many remotes is point-to-multipoint."],
     ["A wireless bridge between two buildings is an example of:",
       ["A point-to-point link", "A bus topology", "A spine and leaf fabric", "A collapsed core"],
@@ -40,7 +40,7 @@ module.exports = {
       ["Hybrid", "Bus", "Ring", "Point-to-point"],
       "Combining topologies makes a hybrid."],
     ["In a bus topology, what happens if the shared cable breaks?",
-      ["The whole segment goes down", "Only one device is affected", "Traffic reroutes automatically", "Nothing happens"],
+      ["The whole segment goes down", "Only the device nearest the break is affected", "Traffic reroutes around the break automatically", "The terminators keep the segment running"],
       "Everything shares one cable, so a single break is fatal."],
     ["Which describes most real-world networks?",
       ["Hybrid topologies", "Pure bus topologies", "Pure ring topologies", "Pure full mesh"],
@@ -51,10 +51,10 @@ module.exports = {
       ["Access", "Distribution", "Core", "Spine"],
       "The access layer connects PCs, phones, and APs."],
     ["Which layer applies policy such as inter-VLAN routing and ACLs?",
-      ["Distribution", "Core", "Access", "Leaf"],
+      ["Distribution", "Core", "Access", "Top-of-rack"],
       "Distribution aggregates access switches and applies policy."],
     ["Why should the core layer avoid heavy filtering and policy?",
-      ["It needs to stay fast, redundant, and simple", "It has no routing ability", "It only connects end devices", "Policy is illegal at the core"],
+      ["It needs to stay fast, redundant, and simple", "Core switches can't route between subnets", "It's where end devices and APs plug in", "ACLs only work on access-layer ports"],
       "The core's job is high-speed transport."],
     ["What is a collapsed core?",
       ["The core and distribution layers merged into one", "The access layer removed", "Spine and leaf merged into one switch", "A network with no redundancy"],
@@ -76,7 +76,7 @@ module.exports = {
   ],
   "Common mix-ups": [
     ["What's the usual difference between 'star' and 'hub and spoke'?",
-      ["Star usually describes a LAN around a switch; hub and spoke describes WAN sites around HQ", "They're unrelated shapes", "Hub and spoke is always wireless", "Star means full redundancy"],
+      ["Star is a LAN around a switch; hub and spoke is WAN sites around HQ", "Star is a WAN of branches; hub and spoke is a LAN around a switch", "Hub and spoke links every branch directly to every other branch", "Star links every device to two central switches for redundancy"],
       "Same shape, different context."],
     ["Which design is built for a campus and which for a data center?",
       ["Three-tier for campus; spine and leaf for data center", "Spine and leaf for campus; three-tier for data center", "Both are only for WANs", "Neither applies to campus networks"],
@@ -87,13 +87,13 @@ module.exports = {
   ],
   "Key terms": [
     ["In network design, what is a single point of failure?",
-      ["One component whose failure takes the whole service down", "A redundant link", "A load-balanced pair", "A backup site"],
+      ["One component whose failure takes the whole service down", "A link that only carries traffic once the primary fails", "A pair of devices that share load and back each other up", "The one site where all backups for the network are kept"],
       "Good design removes single points of failure."],
     ["What does 'dual-homed' mean for an access switch?",
-      ["It has uplinks to two upstream switches for redundancy", "It has two VLANs", "It has two power cords only", "It connects to two ISPs"],
+      ["It uplinks to two distribution switches", "It carries exactly two VLANs on each trunk", "It has two power supplies but a single uplink", "It connects directly to two separate ISPs"],
       "If one uplink or switch fails, the other keeps it connected."],
     ["What does ECMP do in a spine-and-leaf fabric?",
-      ["Spreads traffic across several equal-cost paths", "Encrypts traffic between leaves", "Assigns VLANs", "Blocks loops like STP"],
+      ["Spreads traffic across several equal-cost paths", "Encrypts all traffic passing between leaves", "Assigns each server port to a VLAN", "Blocks redundant spine links, like STP"],
       "Equal-cost multipath uses all spine links together."]
   ]
 };

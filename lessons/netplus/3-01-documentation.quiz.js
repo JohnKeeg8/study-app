@@ -7,35 +7,35 @@ module.exports = {
       ["Physical diagram", "Logical diagram", "Data flow diagram", "IPAM report"],
       "Physical diagrams show where hardware is and how it's cabled."],
     ["Which document shows what equipment occupies each rack unit?",
-      ["Rack diagram (rack elevation)", "Logical diagram", "SLA", "AUP"],
-      "Rack elevations show front and back placement."],
+      ["Rack diagram (rack elevation)", "Logical network diagram", "Cable map (port map)", "Data flow diagram"],
+      "Rack elevations show front and back placement of gear in each U."],
     ["Which habits make network diagrams useful to everyone?",
-      ["Consistent symbols, a legend, device names, and dates or versions", "Different symbols on every page", "No device names", "Keeping them only in one person's head"],
-      "Standard symbols and legends make diagrams readable."]
+      ["Consistent symbols, a legend, device names, and dates or versions", "Vendor-specific icons per page, with IP addresses left off for security", "Hand-drawn sketches kept by whoever built that part of the network", "One master diagram combining physical, logical, and rack views, undated"],
+      "Standard symbols, legends, names, and dates/versions make diagrams readable."]
   ],
   "Cable maps and port documentation": [
     ["What does a cable map record?",
-      ["Which wall jack connects to which patch panel port and switch port", "Wireless signal strength", "User passwords", "DHCP lease times"],
-      "Cable maps let technicians trace connections quickly."],
+      ["Which wall jack connects to which patch panel port and switch port", "Which VLANs and subnets each switch port belongs to and how they route", "Where each AP's signal is strong or weak across the floor plan", "Which device sits in each rack unit, including PDUs and patch panels"],
+      "Cable maps let technicians trace jack → patch panel → switch port quickly."],
     ["A user moved desks and the new jack doesn't work. What should be checked first?",
-      ["Whether the new jack is patched to an active switch port", "The user's password", "The DNS server", "The browser cache"],
+      ["Whether the new jack is patched to an active switch port", "Whether the user's DHCP lease from the old desk has expired", "Whether the DNS server still has the old desk's IP cached", "Whether the user's account is locked out after the move"],
       "Unpatched or dead jacks are common after moves."],
     ["Where should device passwords be kept?",
-      ["In a password vault, never in plain text in documentation", "In the network diagram", "On a label on the rack", "In the cable map"],
-      "Documentation should never expose credentials."]
+      ["In a password vault, never in plain text in documentation", "In the device records, next to hostname and management IP", "On the network diagram, so on-call staff can find them", "In a protected column of the cable map spreadsheet"],
+      "Documentation should never expose credentials; use a password vault."]
   ],
   "Asset inventory and IPAM": [
     ["Which details belong in an asset inventory?",
-      ["Model, serial number, firmware version, location, owner, warranty/support dates, and licenses", "Only hostnames", "Only purchase prices", "Only user names"],
-      "These support lifecycle planning, audits, and support calls."],
+      ["Model, serial, firmware, location, owner, warranty dates, and licenses", "Subnets, static IP assignments, DHCP scopes, and DNS records", "Utilization, latency, error rates, and CPU at different times", "Jack, patch panel port, and switch port for every cable run"],
+      "Inventory details support lifecycle planning, audits, and support calls. The other lists describe IPAM, a baseline, and a cable map."],
     ["What does IPAM help prevent?",
-      ["Overlapping subnets and duplicate IP addresses", "Wireless interference", "Cable crosstalk", "Power outages"],
+      ["Overlapping subnets and duplicate IP addresses", "Expired warranties and unlicensed software", "Co-channel interference between nearby APs", "Unapproved changes to device configurations"],
       "IPAM tracks subnets, static IPs, DHCP scopes, and DNS."],
     ["Which IPAM feature warns you before a DHCP scope runs out?",
-      ["Utilization reporting", "Cable testing", "Heat mapping", "Change approval"],
+      ["Utilization reporting", "Duplicate IP detection", "DNS record auditing", "Lease time tuning"],
       "Utilization trends show scopes nearing capacity."],
     ["Why is an accurate asset inventory important for security?",
-      ["You can't protect devices you don't know about", "It encrypts devices", "It replaces firewalls", "It blocks malware"],
+      ["You can't protect devices you don't know about", "It encrypts the serial numbers it stores", "It blocks unlisted devices from the network", "It assigns each asset a unique static IP"],
       "Unknown devices go unpatched and unmonitored."]
   ],
   "Agreements and policies": [
@@ -60,11 +60,11 @@ module.exports = {
       ["A record of normal performance used for comparison", "The minimum configuration a device ships with", "The cheapest service tier", "A backup of all configs"],
       "Baselines show what 'normal' looks like."],
     ["Why is a baseline essential when a user says 'the network is slow'?",
-      ["It lets you tell whether current performance is actually unusual", "It speeds up the network", "It replaces monitoring tools", "It fixes slow DNS"],
+      ["It shows whether current performance is actually unusual", "It sets the speed limit the network is allowed to reach", "It restores the last known good config to fix slowness", "It proves the SLA was met, so the complaint can be closed"],
       "Without normal values, you can't judge abnormal ones."],
     ["Which data is useful in a performance baseline?",
-      ["Utilization, latency, error rates, and CPU/memory at different times", "Cable colors", "Rack heights", "User job titles"],
-      "Track metrics over time to see patterns and trends."]
+      ["Utilization, latency, error rates, and CPU/memory at different times", "Model, serial number, and warranty dates for each device", "Rack unit positions and power draw for each piece of gear", "Signal strength and SNR measured across the floor plan"],
+      "Track performance metrics over time to see patterns and trends."]
   ],
   "Wireless surveys": [
     ["Which survey uses software modeling of floor plans before any APs are installed?",
@@ -74,10 +74,10 @@ module.exports = {
       ["Active", "Passive", "Predictive", "Spectrum-only"],
       "Passive surveys only listen."],
     ["What is a wireless heat map?",
-      ["A color-coded map of signal strength or SNR across a floor plan", "A temperature map of the server room", "A list of connected clients", "A VLAN diagram"],
+      ["A color-coded map of signal strength or SNR across a floor plan", "A chart of which APs carry the most client traffic each hour", "A thermal map of AP temperatures to spot overheating units", "A floor plan showing which VLAN each wireless client joins"],
       "Heat maps make coverage gaps easy to spot."],
     ["Why repeat a wireless survey after a renovation?",
-      ["New walls and furniture change RF conditions", "SSIDs expire", "APs change MAC addresses", "Surveys are only valid for a day"],
+      ["New walls and furniture change RF conditions", "Renovations reset the APs to factory channels", "Survey results expire after any building permit", "Moving desks changes each client's MAC address"],
       "Coverage that worked before may degrade."]
   ],
   "Common mix-ups": [
@@ -85,21 +85,21 @@ module.exports = {
       ["An SLA has measurable, enforceable commitments; an MOU is non-binding", "An MOU has penalties; an SLA doesn't", "Both are legally binding contracts for confidentiality", "They're identical"],
       "SLAs specify metrics and remedies."],
     ["SOW vs SOP: which is correct?",
-      ["SOW = a project's deliverables; SOP = step-by-step instructions for a routine task", "SOP = project deliverables", "Both are confidentiality agreements", "They're identical"],
+      ["SOW = a project's deliverables; SOP = steps for a routine task", "SOP = a project's deliverables; SOW = steps for a routine task", "SOW = user rules on systems; SOP = a provider's uptime terms", "SOW = a non-binding intent; SOP = a binding confidentiality pact"],
       "Statement of work vs standard operating procedure."],
     ["Asset inventory vs IPAM: which is correct?",
-      ["Inventory tracks equipment and licenses; IPAM tracks addresses, scopes, and DNS", "IPAM tracks serial numbers", "Inventory assigns IPs", "They're the same tool"],
-      "Different records for different purposes."]
+      ["Inventory tracks equipment and licenses; IPAM tracks addresses", "IPAM tracks serial numbers and warranties; inventory tracks DNS", "Inventory assigns DHCP leases; IPAM records firmware versions", "IPAM is the cable map; inventory is the rack elevation diagram"],
+      "Inventory tracks equipment and licenses; IPAM tracks addresses, scopes, and DNS."]
   ],
   "Key terms": [
     ["What does 'five nines' availability mean?",
-      ["99.999% uptime, about 5 minutes of downtime per year", "99.9% uptime", "Five redundant servers", "Five hours of downtime per month"],
+      ["99.999% uptime, about 5 minutes of downtime a year", "99.99% uptime, about 52 minutes of downtime a year", "Five redundant servers behind one load balancer", "99.9% uptime, about 8.76 hours of downtime a year"],
       "Five nines is a very high availability target."],
     ["What is a diagram legend?",
-      ["The key explaining what each symbol means", "The title of the diagram", "The author's name", "A list of IP addresses"],
+      ["The key explaining what each symbol means", "The revision history listing every edit", "The title block naming the site and author", "The table of IP addresses for each device"],
       "Legends make diagrams readable by anyone."],
     ["What is an SOP?",
-      ["Step-by-step instructions for doing a routine task consistently", "A legal contract", "A wireless survey report", "A backup schedule"],
+      ["Step-by-step instructions for doing a routine task the same way", "The list of tasks, deliverables, and timeline for a project", "A provider's measurable uptime commitments with penalties", "The rules users agree to follow when using company systems"],
       "SOPs make sure tasks are done the same way every time."]
   ]
 };

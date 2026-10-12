@@ -1,7 +1,7 @@
 module.exports = {
   "Masks and CIDR notation": [
     ["What does the prefix /26 mean?",
-      ["The first 26 bits are the network portion", "The network has 26 hosts", "There are 26 subnets", "The address is in Class 26"],
+      ["The first 26 bits are the network portion", "The last 26 bits are the host portion", "The subnet holds 26 usable hosts", "The mask borrows 26 bits from a /24"],
       "The prefix length counts the 1 bits in the mask."],
     ["What is the subnet mask for /28?",
       ["255.255.255.240", "255.255.255.224", "255.255.255.248", "255.255.255.192"],
@@ -32,10 +32,10 @@ module.exports = {
       ["172.32.10.5", "172.20.10.5", "10.200.1.1", "192.168.50.1"],
       "Private 172 space is only 172.16–172.31."],
     ["A PC shows the address 169.254.33.8. What does this most likely mean?",
-      ["It couldn't reach a DHCP server and assigned itself an APIPA address", "It has a public address", "It's a loopback address", "It's in a private Class B range"],
+      ["It couldn't reach DHCP and self-assigned an APIPA address", "It got a private RFC 1918 lease from the DHCP server", "It's using a loopback address to test its own stack", "It was given a public address by the ISP's DHCP server"],
       "169.254.0.0/16 is APIPA (link-local)."],
     ["What do hosts with RFC 1918 private addresses need in order to reach the internet?",
-      ["NAT/PAT at the network edge", "APIPA", "A loopback address", "A Class D address"],
+      ["NAT/PAT at the network edge", "An APIPA link-local address", "A Class D multicast address", "A /30 link to the ISP router"],
       "Private addresses aren't routed on the internet."],
     ["What does 0.0.0.0/0 mean in a routing table?",
       ["The default route", "The loopback network", "A broadcast address", "An APIPA range"],
@@ -43,7 +43,7 @@ module.exports = {
   ],
   "Subnetting step by step": [
     ["Why do we subtract 2 when calculating usable hosts?",
-      ["The network ID and broadcast address can't be assigned to hosts", "Two addresses are reserved for routers", "Two addresses are always used by DHCP", "To leave room for growth"],
+      ["The network ID and broadcast can't go to hosts", "The default gateway and DNS server are reserved", "The DHCP server and its relay agent use two", "Loopback and APIPA take one address each"],
       "Usable hosts = 2^h − 2."],
     ["What is the network ID of 192.168.10.77/26?",
       ["192.168.10.64", "192.168.10.0", "192.168.10.77", "192.168.10.128"],
@@ -63,10 +63,10 @@ module.exports = {
   ],
   "VLSM and CIDR": [
     ["What does VLSM let you do?",
-      ["Use different mask lengths inside the same network to fit each subnet's size", "Use only classful masks", "Run IPv6 and IPv4 together", "Merge VLANs"],
+      ["Use different mask lengths within one network", "Use only the default classful mask on each subnet", "Advertise many networks as one summary route", "Run IPv4 and IPv6 on the same interface"],
       "Variable Length Subnet Masking saves address space."],
     ["Why is a /30 commonly used for point-to-point router links?",
-      ["It gives exactly 2 usable addresses, one per router", "It gives 30 usable hosts", "It's the only mask routers support", "It enables multicast"],
+      ["It gives exactly 2 usable addresses", "It gives 30 usable addresses for growth", "It gives 4 usable addresses, two spare", "It needs no network ID or broadcast"],
       "4 addresses: network, two hosts, broadcast."],
     ["Four contiguous networks, 192.168.0.0/24 through 192.168.3.0/24, summarize to which route?",
       ["192.168.0.0/22", "192.168.0.0/23", "192.168.0.0/16", "192.168.0.0/24"],
@@ -80,7 +80,7 @@ module.exports = {
       ["192.168.10.65", "192.168.10.64", "192.168.10.1", "192.168.10.127"],
       "The network ID (.64) itself can't be assigned."],
     ["Is 169.254.0.0/16 one of the RFC 1918 private ranges?",
-      ["No; it's APIPA link-local, self-assigned when DHCP fails", "Yes, it's private Class B", "Yes, it's private Class C", "No; it's public"],
+      ["No; it's APIPA link-local, self-assigned", "Yes; it's part of the private Class B range", "Yes; it's the private Class C range", "No; it's public and routed on the internet"],
       "RFC 1918 is only 10/8, 172.16/12, and 192.168/16."],
     ["Which formula counts subnets and which counts hosts?",
       ["Subnets = 2^b; hosts = 2^h − 2", "Subnets = 2^b − 2; hosts = 2^h", "Both are 2^n − 2", "Both are 2^n"],
@@ -91,10 +91,10 @@ module.exports = {
       ["8 bits of an IPv4 address", "4 bits of an address", "A subnet mask", "A group of 8 hosts"],
       "An IPv4 address has four octets."],
     ["What is the network ID of a subnet?",
-      ["The first address, which identifies the subnet itself", "The address of the router", "The last address in the subnet", "The DNS server address"],
+      ["The first address, identifying the subnet", "The last address, reaching all hosts", "The router's address on that subnet", "The first address you assign to a host"],
       "It can't be assigned to a host."],
     ["What is route summarization?",
-      ["Advertising one route that covers several contiguous networks", "Deleting unused routes", "Splitting a network into subnets", "Encrypting routing updates"],
+      ["Advertising one route for several contiguous networks", "Splitting one network into several smaller subnets", "Using different mask lengths inside one network", "Removing unused routes from the routing table"],
       "Also called supernetting; it shrinks routing tables."]
   ]
 };
