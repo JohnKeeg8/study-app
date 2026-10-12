@@ -29,10 +29,10 @@ module.exports = {
       ["Source 0.0.0.0, destination 255.255.255.255", "Source 127.0.0.1, destination 224.0.0.1", "Source 169.254.1.1, destination the router", "Source 255.255.255.255, destination 0.0.0.0"],
       "It has no address yet and doesn't know the server, so it broadcasts."],
     ["Why do routers block directed broadcasts by default?",
-      ["They were abused in Smurf denial-of-service attacks", "They're too slow", "They only work in IPv6", "They carry encrypted data"],
+      ["They were abused in Smurf DoS attacks", "They are not supported at all in IPv4", "They flood every VLAN on the local switch", "They would loop endlessly between routers"],
       "A directed broadcast targets all hosts on a remote subnet."],
     ["What is the usual fix for excessive broadcast traffic on a large flat network?",
-      ["Split it into smaller broadcast domains with VLANs", "Add more hubs", "Disable ARP", "Increase the MTU"],
+      ["Split it into smaller broadcast domains with VLANs", "Replace the switches with hubs to repeat frames faster", "Enable IGMP snooping so switches stop flooding ARP", "Disable ARP on hosts and use static MAC tables instead"],
       "Smaller broadcast domains mean each host processes fewer broadcasts."]
   ],
   "Multicast": [
@@ -40,7 +40,7 @@ module.exports = {
       ["IGMP", "ICMP", "ARP", "DHCP"],
       "Internet Group Management Protocol handles group membership."],
     ["What happens to multicast on a switch without IGMP snooping?",
-      ["It's flooded out every port like broadcast", "It's dropped", "It's sent only to the router", "It's converted to unicast"],
+      ["It's flooded out every port like a broadcast", "It's dropped because no group has been joined", "It's sent only to the port facing the router", "It's converted into separate unicast copies"],
       "IGMP snooping limits multicast to interested ports."],
     ["OSPF hellos sent to 224.0.0.5 are which type of traffic?",
       ["Multicast", "Broadcast", "Anycast", "Unicast"],
@@ -51,13 +51,13 @@ module.exports = {
   ],
   "Anycast": [
     ["How does anycast deliver traffic to the closest server?",
-      ["The same IP is advertised from many sites (via BGP) and routing picks the nearest", "DNS randomly picks a server", "The client broadcasts to find servers", "Switches flood the traffic"],
+      ["One IP is advertised from many sites; routing picks the nearest", "DNS hands each client a different IP address chosen at random", "The client broadcasts a request and the first server to reply wins", "Switches use IGMP to send traffic to the nearest group member"],
       "Normal routing selects the topologically closest advertisement."],
     ["Which service commonly uses anycast?",
-      ["Public DNS resolvers like 1.1.1.1", "DHCP Discover", "ARP requests", "OSPF hellos"],
-      "DNS root and public resolvers use anycast for speed and resilience."],
+      ["Public DNS resolvers like 1.1.1.1", "DHCP Discover from new clients", "OSPF hellos sent to 224.0.0.5", "ARP requests for the gateway's MAC"],
+      "DNS root and public resolvers use anycast for speed and resilience. DHCP Discover and ARP requests are broadcast; OSPF hellos are multicast."],
     ["What happens to anycast users if one site fails?",
-      ["Routing sends them to the next closest site", "All users lose service", "Traffic is broadcast instead", "Users must change their IP"],
+      ["Routing sends them to the next closest site", "All users of that address lose the service", "Their traffic is broadcast to every remaining site", "They must be given a new IP address by DHCP"],
       "Resilience is a key benefit of anycast."]
   ],
   "IPv6 and broadcast": [
@@ -68,7 +68,7 @@ module.exports = {
       ["FF02::1", "FF02::2", "::1", "FE80::1"],
       "FF02::1 = all nodes; FF02::2 = all routers."],
     ["What does IPv6 use instead of ARP?",
-      ["Neighbor Discovery using multicast", "Broadcast ARP", "DHCPv6 only", "IGMP"],
+      ["Neighbor Discovery (multicast)", "ARP sent to FF:FF:FF:FF:FF:FF", "IGMP group membership reports", "DHCPv6 address leases only"],
       "Neighbor Discovery (over ICMPv6) replaces ARP."]
   ],
   "Common mix-ups": [
@@ -76,18 +76,18 @@ module.exports = {
       ["Request is broadcast; reply is unicast", "Both are broadcast", "Both are multicast", "Request is unicast; reply is broadcast"],
       "The asker doesn't know the MAC, so it broadcasts; the owner answers directly."],
     ["What is the key difference between anycast and multicast?",
-      ["Anycast reaches one (the nearest) destination; multicast reaches many group members", "Anycast reaches everyone", "Multicast reaches only the nearest host", "They are identical"],
+      ["Anycast reaches the nearest one; multicast reaches all group members", "Anycast reaches every host on the link; multicast reaches the nearest", "Multicast reaches only the nearest host; anycast reaches every member", "Anycast exists only in IPv4; multicast exists only in IPv6 networks"],
       "Anycast = one of many; multicast = many."],
     ["Which statement about switches and broadcasts is correct?",
-      ["Switches forward broadcasts within a VLAN; routers stop them", "Switches block all broadcasts", "Routers forward broadcasts by default", "Hubs stop broadcasts"],
+      ["Switches forward broadcasts within a VLAN; routers stop them", "Switches stop broadcasts at each port; routers forward them", "Routers forward broadcasts between VLANs by default", "Switches forward broadcasts only to IGMP-joined ports"],
       "VLANs and routers bound broadcast domains."]
   ],
   "Key terms": [
     ["What is a broadcast domain?",
-      ["The set of devices that receive each other's broadcasts, such as a VLAN or subnet", "A DNS zone", "A wireless channel", "A group of multicast receivers"],
+      ["Devices that receive each other's broadcasts", "Hosts that joined the same multicast group", "All servers sharing a single anycast address", "Hosts on separate subnets joined by a router"],
       "Routers and VLAN boundaries separate broadcast domains."],
     ["What does IGMP snooping do?",
-      ["Lets a switch send multicast only to ports with interested receivers", "Blocks rogue DHCP servers", "Encrypts multicast traffic", "Converts broadcast to unicast"],
+      ["Limits multicast to switch ports with interested receivers", "Lets hosts tell their router which multicast group to join", "Blocks rogue DHCP servers from answering client requests", "Converts multicast streams into separate unicast copies"],
       "Switches listen to IGMP joins to build multicast forwarding."],
     ["What is Class D address space used for?",
       ["Multicast", "Private addressing", "Loopback", "Experimental use"],

@@ -4,10 +4,10 @@ module.exports = {
       ["0–1023", "1024–49151", "49152–65535", "1–65535"],
       "Well-known ports host standard services. Registered ports are 1024–49151; dynamic/ephemeral ports are 49152–65535."],
     ["When a laptop connects to a web server on port 443, what source port does the laptop usually use?",
-      ["A temporary high-numbered ephemeral port", "Port 443", "Port 80", "Port 0"],
+      ["A random ephemeral port", "Well-known port 443 itself", "Registered port 1433", "Well-known port 80"],
       "The client picks an ephemeral source port so it can hold many connections at once."],
     ["Which five values identify a single network connection?",
-      ["Source IP, source port, destination IP, destination port, and protocol", "MAC address, VLAN, IP, port, and TTL", "Hostname, IP, mask, gateway, and DNS", "Only the destination IP and port"],
+      ["Source and destination IP, source and destination port, and protocol", "Source and destination MAC, source and destination IP, and VLAN ID", "Source and destination IP, subnet mask, default gateway, and DNS", "Destination IP, destination port, protocol, TTL, and sequence number"],
       "This 5-tuple makes each connection unique."]
   ],
   "TCP and UDP": [
@@ -15,13 +15,13 @@ module.exports = {
       ["SYN, SYN-ACK, ACK", "ACK, SYN, FIN", "SYN, ACK, RST", "SYN-ACK, SYN, ACK"],
       "Client SYN, server SYN-ACK, client ACK."],
     ["Why does live voice traffic use UDP instead of TCP?",
-      ["Retransmitted voice packets arrive too late to help; low delay matters more than perfect delivery", "UDP encrypts voice automatically", "UDP guarantees delivery", "TCP can't carry audio"],
+      ["Retransmitted voice arrives too late; low delay beats perfect delivery", "UDP acknowledges each voice packet faster than TCP's handshake can", "UDP encrypts the voice stream, while TCP sends it in cleartext", "TCP has no port numbers, so it cannot address the VoIP phone"],
       "Real-time traffic tolerates small loss better than added latency."],
     ["A server replies to a connection attempt with an immediate TCP RST. What does this usually mean?",
       ["Nothing is listening on that port", "The connection succeeded", "The server is overloaded with SYNs", "DNS failed"],
       "RST aborts the connection; it often signals a closed port."],
     ["Which feature belongs to TCP but not UDP?",
-      ["Acknowledgments and retransmission of lost data", "Port numbers", "Use with IP", "Very low overhead"],
+      ["Acknowledgments and retransmission", "Source and destination port numbers", "Very low overhead and fast delivery", "Carrying DNS queries on port 53"],
       "TCP adds reliability; UDP has none."]
   ],
   "Ports you must know": [
@@ -52,7 +52,7 @@ module.exports = {
       ["AH", "ESP", "IKE", "GRE"],
       "AH provides integrity and authentication only. ESP adds encryption."],
     ["What does GRE do?",
-      ["Tunnels other traffic, including multicast, without encryption", "Encrypts IPsec payloads", "Assigns IP addresses", "Synchronizes clocks"],
+      ["Tunnels other traffic, even multicast, without encryption", "Encrypts and authenticates the payload of IPsec packets", "Authenticates IPsec packets without encrypting them", "Negotiates IPsec keys and settings over UDP port 500"],
       "GRE (protocol 47) is plain encapsulation, often run inside IPsec for security."],
     ["Which ports does IPsec's IKE use, including NAT traversal?",
       ["UDP 500 and UDP 4500", "TCP 443 only", "TCP 22 and TCP 23", "UDP 67 and 68"],
@@ -63,7 +63,7 @@ module.exports = {
       ["SSH", "SFTP", "HTTPS", "SNMPv3"],
       "SSH encrypts the remote command-line session."],
     ["Why are protocols like Telnet, FTP, and HTTP considered insecure?",
-      ["They send data, including credentials, in cleartext", "They use UDP", "They require certificates", "They only work on IPv6"],
+      ["They send data, including credentials, in cleartext", "They use UDP, so they have no handshake or acknowledgments", "They rely on expired certificates for TLS encryption", "They use ephemeral ports that firewalls cannot track"],
       "Anyone capturing the traffic can read it."],
     ["Which change secures SNMP without changing its ports?",
       ["Upgrading to SNMPv3", "Moving it to TCP 22", "Using SNMPv1 community 'private'", "Switching to TFTP"],
@@ -71,27 +71,27 @@ module.exports = {
   ],
   "Common mix-ups": [
     ["What is the difference between SFTP and FTPS?",
-      ["SFTP runs over SSH on port 22; FTPS is FTP with TLS added", "They're the same protocol", "SFTP uses UDP; FTPS uses TCP", "FTPS runs over SSH"],
+      ["SFTP runs over SSH on port 22; FTPS is FTP with TLS added", "FTPS runs over SSH on port 22; SFTP is FTP with TLS added", "SFTP uses UDP port 69; FTPS uses TCP ports 20 and 21", "SFTP is FTP with TLS added; FTPS runs inside an IPsec tunnel"],
       "Despite similar names, they're unrelated protocols."],
     ["Which protocol sends email between servers, and which retrieves it while keeping it on the server?",
-      ["SMTP sends; IMAP retrieves and syncs", "IMAP sends; SMTP retrieves", "POP3 sends; SMTP retrieves", "SNMP sends; IMAP retrieves"],
-      "SMTP = send; IMAP/POP3 = retrieve."],
+      ["SMTP sends; IMAP retrieves", "IMAP sends; SMTP retrieves", "SMTP sends; POP3 retrieves", "SNMP sends; IMAP retrieves"],
+      "SMTP = send; IMAP retrieves and keeps mail on the server, syncing devices. POP3 also retrieves but downloads the mail instead."],
     ["In a VoIP call, what does SIP do compared with RTP?",
-      ["SIP sets up and ends the call; RTP carries the audio and video", "RTP sets up the call; SIP carries the audio", "Both carry audio", "SIP encrypts RTP"],
+      ["SIP sets up and ends the call; RTP carries the media", "RTP sets up and ends the call; SIP carries the media", "SIP carries the audio; RTP carries only the video", "SIP encrypts the RTP stream using TLS on port 5061"],
       "Signaling (SIP) and media (RTP) are separate."],
     ["Why doesn't ICMP have a port number?",
-      ["It sits directly on IP with protocol number 1 instead of using TCP or UDP", "It uses port 0", "It uses the same port as DNS", "It only works over TCP"],
+      ["It rides directly on IP as protocol number 1", "It always uses TCP port 0 for echo requests", "It shares UDP port 53 with DNS name queries", "It is carried inside GRE tunnels on port 47"],
       "ICMP, GRE, ESP, and AH are identified by IP protocol numbers."]
   ],
   "Key terms": [
     ["What is an ephemeral port?",
-      ["A temporary high-numbered port a client uses as its source port", "A port that's always closed", "A reserved well-known port", "A port used only by routers"],
+      ["A temporary high port a client uses as its source port", "A well-known port a server listens on, like 22 or 443", "A registered port assigned to a vendor app, like 3389", "A port that a firewall has closed to inbound traffic"],
       "Ephemeral ports come from the dynamic range."],
     ["What is a socket?",
-      ["An IP address combined with a port number", "A type of cable connector", "A DNS record", "A VLAN tag"],
+      ["An IP address plus a port", "A MAC address plus a VLAN", "A source and destination MAC", "A protocol number plus a TTL"],
       "For example 192.168.1.10:443."],
     ["What is NAT traversal (NAT-T) in IPsec?",
-      ["IPsec moving to UDP 4500 so it can pass through NAT devices", "Translating IPv6 to IPv4", "Blocking NAT on the firewall", "Assigning public IPs to hosts"],
-      "NAT-T wraps ESP in UDP 4500."]
+      ["IPsec moving to UDP 4500 to pass through NAT", "IPsec moving to UDP 500 to negotiate its keys", "IPsec switching from ESP to AH behind a NAT", "IPsec wrapping its packets in GRE protocol 47"],
+      "NAT-T wraps ESP in UDP 4500. IKE itself negotiates on UDP 500."]
   ]
 };

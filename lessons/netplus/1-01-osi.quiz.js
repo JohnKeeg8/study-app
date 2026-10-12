@@ -1,10 +1,10 @@
 module.exports = {
   "Why the OSI model matters": [
     ["What kind of thing is the OSI model?",
-      ["A reference model that describes networking as seven layers", "A routing protocol installed on routers", "A cabling standard for Ethernet", "An encryption suite used by TLS"],
+      ["A seven-layer reference model used as shared vocabulary", "A routing protocol that routers install and run", "A cabling and connector standard for Ethernet", "The encryption suite that TLS sessions rely on"],
       "OSI is a conceptual reference model, a shared vocabulary for describing where things happen in a network, not software you run."],
     ["Why does dividing networking into layers help equipment from different vendors work together?",
-      ["Each vendor builds to the same standards for a given layer, so their products interoperate", "It forces all vendors to use the same hardware", "It removes the need for any standards", "It makes every device operate at all seven layers"],
+      ["Vendors build to the same per-layer standards, so products interoperate", "Every vendor must use identical hardware at each of the seven layers", "Each layer is owned by one vendor, so no two products ever overlap", "Layering lets every device run all seven layers, so no standards are needed"],
       "Because layers have defined jobs and standards (e.g. Ethernet at Layer 2), one vendor's NIC works with another vendor's switch."],
     ["How does the OSI model help when troubleshooting?",
       ["It lets you test one layer at a time instead of guessing", "It automatically fixes misconfigured devices", "It tells you which vendor to call", "It replaces the need for documentation"],
@@ -35,7 +35,7 @@ module.exports = {
   ],
   "Encapsulation and PDUs": [
     ["What is encapsulation?",
-      ["Each layer adding its own header (and Layer 2 a trailer) as data moves down the stack", "Encrypting data before transmission", "Removing headers as data moves up the stack", "Compressing data at the Presentation layer"],
+      ["Each layer adding its header (plus a Layer 2 trailer) on the way down", "Each layer stripping its header as received data moves up the stack", "The Presentation layer encrypting data before it is transmitted", "Layer 4 splitting application data into smaller segments only"],
       "Encapsulation wraps upper-layer data with headers on the way down. Decapsulation removes them on the way up."],
     ["What is the PDU called at Layer 3?",
       ["Packet", "Frame", "Segment", "Bit"],
@@ -44,7 +44,7 @@ module.exports = {
       ["Frame", "Packet", "Datagram", "Segment"],
       "Data Link layer units are frames, which include MAC addresses and an FCS trailer."],
     ["What does the frame check sequence (FCS) in a frame's trailer do?",
-      ["Lets the receiver detect corrupted frames using a CRC value", "Encrypts the frame", "Holds the destination IP address", "Sets the frame's VLAN"],
+      ["Lets the receiver detect corrupted frames using a CRC", "Encrypts the frame payload before it leaves the NIC", "Carries the destination IP address for the router", "Tags the frame with its 802.1Q VLAN ID for trunking"],
       "The FCS is a CRC checksum. A mismatch means the frame was damaged in transit, usually a physical-layer problem."]
   ],
   "Addresses and devices by layer": [
@@ -61,8 +61,8 @@ module.exports = {
       ["Layers 2 and 3", "Layer 1 only", "Layers 4 and 7", "Layer 2 only"],
       "It switches frames within VLANs and routes packets between them."],
     ["Which device type can make decisions based on application content such as URLs?",
-      ["Next-generation firewall or Layer 7 load balancer", "Hub", "Layer 2 switch", "Repeater"],
-      "Inspecting URLs and applications requires Layer 7 awareness."]
+      ["Next-generation firewall", "Multilayer (Layer 3) switch", "Stateful packet-filter firewall", "Layer 2 managed switch"],
+      "Inspecting URLs and applications requires Layer 7 awareness, which NGFWs, Layer 7 load balancers, and proxies have. Stateful firewalls stop at IPs and ports (Layers 3–4)."]
   ],
   "The TCP/IP model": [
     ["How many layers does the TCP/IP model have?",
@@ -83,7 +83,7 @@ module.exports = {
       ["Layer 1", "Layer 3", "Layer 4", "Layer 7"],
       "No link light means a physical problem: cable, port, transceiver, or power."],
     ["A user can ping a server by IP, but the website on it returns an HTTP 500 error. Where is the problem most likely?",
-      ["Layer 7 – the application", "Layer 1 – cabling", "Layer 2 – switching", "Layer 3 – routing"],
+      ["Layer 7 – the application", "Layer 1 – the cabling", "Layer 2 – MAC switching", "Layer 3 – IP routing"],
       "A successful ping proves Layers 1–3. An HTTP error comes from the application."],
     ["Which troubleshooting approach starts in the middle, often with a ping, then moves up or down based on the result?",
       ["Divide and conquer", "Bottom-up", "Top-down", "Follow the path"],
@@ -97,24 +97,24 @@ module.exports = {
       ["packets; frames", "frames; packets", "segments; bits", "bits; segments"],
       "Routers are Layer 3 (packets); switches are Layer 2 (frames)."],
     ["Which statement correctly separates the Transport and Session layers?",
-      ["Transport delivers data between hosts with ports and reliability; Session manages the conversation between applications", "Session uses port numbers; Transport manages dialogs", "Both handle IP addressing", "Transport encrypts data; Session compresses it"],
+      ["Transport moves data host to host using ports; Session manages the application dialog", "Session assigns port numbers to hosts; Transport opens and closes application dialogs", "Transport handles IP addressing and routing; Session handles MAC addressing on the LAN", "Transport encrypts the data for each host; Session compresses it for the application"],
       "Layer 4 = host-to-host delivery. Layer 5 = application dialog control."],
     ["An IP address belongs to which layer, and a MAC address to which layer?",
       ["IP = Layer 3, MAC = Layer 2", "IP = Layer 2, MAC = Layer 3", "Both Layer 3", "IP = Layer 4, MAC = Layer 1"],
       "Logical addressing is Network (3); hardware addressing is Data Link (2)."],
     ["Which statement about hubs and switches is correct?",
-      ["A hub repeats bits out every port (Layer 1); a switch learns MACs and forwards only where needed (Layer 2)", "A hub routes between networks", "A switch works at Layer 1", "Both forward frames using IP addresses"],
+      ["A hub repeats bits out every port; a switch forwards frames by MAC", "A hub learns MACs per port; a switch repeats bits out every port", "A hub routes packets between networks; a switch works at Layer 1", "Both hubs and switches forward frames using destination IP addresses"],
       "Hubs have no address awareness; switches use a MAC address table."]
   ],
   "Key terms": [
     ["What is decapsulation?",
-      ["Removing headers layer by layer as received data moves up the stack", "Adding headers as data moves down the stack", "Splitting a frame into bits", "Encrypting a packet"],
+      ["Removing each layer's header as received data moves up the stack", "Adding each layer's header as outgoing data moves down the stack", "Converting a frame into raw bits for transmission on the cable", "Encrypting a packet at the Presentation layer before delivery"],
       "The receiver strips each layer's header in reverse order."],
     ["What does 'PDU' stand for?",
       ["Protocol data unit", "Packet delivery utility", "Physical data unit", "Port distribution unit"],
       "The PDU is the name for the data at a given layer: frame, packet, segment, and so on."],
     ["What is TCP windowing?",
-      ["Flow control that limits how much unacknowledged data can be in flight", "A method of encrypting segments", "A way to assign port numbers", "A Layer 2 error check"],
+      ["Flow control that limits unacknowledged data in flight", "A method of encrypting segments between two hosts", "A way to assign ephemeral port numbers to sessions", "A Layer 2 error check carried in the frame trailer"],
       "Windowing stops a fast sender from overwhelming a slower receiver."]
   ]
 };

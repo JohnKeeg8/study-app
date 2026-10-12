@@ -4,7 +4,7 @@ module.exports = {
       ["RJ11", "RJ45", "F-type", "LC"],
       "RJ11 is the smaller phone plug; RJ45 is for Ethernet."],
     ["Which coax connector screws on and is used for cable TV and cable modems?",
-      ["F-type", "BNC", "RJ45", "SC"],
+      ["F-type connector", "BNC connector", "RJ11 connector", "ST connector"],
       "F-type threads onto RG-6 coax."],
     ["Which tool pushes wires into a patch panel or keystone jack?",
       ["Punchdown tool", "Crimper", "OTDR", "Fusion splicer"],
@@ -24,7 +24,7 @@ module.exports = {
       ["MPO/MTP", "LC", "SC", "F-type"],
       "MPO carries many fibers at once."],
     ["Why must you never mate a green APC connector with a UPC connector?",
-      ["The angled and flat faces don't meet properly, causing high loss and possible damage", "They use different voltages", "APC is only for copper", "UPC connectors carry PoE"],
+      ["The angled and flat faces don't meet, causing high loss", "APC is single-mode only, while UPC is multimode only", "APC has a 1.25 mm ferrule and UPC has a 2.5 mm one", "The APC's push-pull latch won't fit a UPC adapter"],
       "APC is polished at 8°; UPC is flat."]
   ],
   "Transceivers (form factors)": [
@@ -38,21 +38,21 @@ module.exports = {
       ["10GBASE-LR", "10GBASE-SR", "1000BASE-SX", "10GBASE-T"],
       "LR = long reach, single-mode."],
     ["What does 'hot-swappable' mean for an SFP?",
-      ["It can be inserted or removed while the switch is running", "It overheats easily", "It requires a reboot to change", "It only works in hot environments"],
+      ["It can be changed while the switch is running", "It must be swapped often because it overheats", "It needs a switch reboot before it is detected", "It only accepts modules from the switch vendor"],
       "Transceivers can be changed without powering down."]
   ],
   "Making links work": [
     ["A fiber link uses a 10GBASE-SR optic on one end and a 10GBASE-LR optic on the other. What happens?",
-      ["The link fails because of a transceiver mismatch (different fiber type and wavelength)", "It links at 10 Gbps", "It links at 1 Gbps", "It works but with higher latency"],
+      ["The link fails: SR and LR use different fiber and wavelengths", "It links at 10 Gbps because both ends are 10GBASE optics", "It negotiates down to 1 Gbps and runs over the multimode side", "It links normally if a BiDi optic is added to one of the ends"],
       "Both ends must use matching standards."],
     ["What does a BiDi transceiver allow?",
-      ["Sending and receiving over a single fiber strand using two wavelengths", "Carrying PoE over fiber", "Linking copper to coax", "Doubling the speed of any link"],
+      ["Send and receive over one strand using two wavelengths", "Send and receive over two strands using one wavelength", "Running multimode and single-mode on the same link", "Doubling a link's speed by using both fibers at once"],
       "BiDi optics are sold as complementary pairs."],
     ["What does DOM (digital optical monitoring) report?",
-      ["Transmit and receive light levels and temperature", "MAC address tables", "VLAN membership", "DNS records"],
+      ["Light levels and temperature", "Fiber polarity type (A, B, C)", "Module vendor approval status", "Connector end-face polish type"],
       "DOM helps diagnose dirty connectors and failing optics."],
     ["A switch shows 'unsupported transceiver' and keeps the port down. What's the likely cause?",
-      ["A third-party or incompatible module the switch doesn't accept", "A wrong VLAN", "An expired DHCP lease", "A bad DNS server"],
+      ["A third-party module the switch won't accept", "An APC connector mated to a UPC connector", "A dirty fiber end-face lowering light levels", "Swapped TX and RX strands on the fiber pair"],
       "Some vendors only accept approved optics."]
   ],
   "Common mix-ups": [
@@ -60,7 +60,7 @@ module.exports = {
       ["LC is small; SC is square and larger", "LC twists to lock; SC screws on", "SC is for copper; LC is for fiber", "They're identical"],
       "LC has half the ferrule size of SC."],
     ["ST and BNC both twist to lock. What's the difference?",
-      ["ST is a fiber connector; BNC is a coax connector", "ST is for phone lines", "BNC is for fiber", "There's none"],
+      ["ST is for fiber; BNC is for coax", "ST is for coax; BNC is for fiber", "ST is for phone lines; BNC for DSL", "ST is single-mode; BNC is multimode"],
       "Same locking style, different media."],
     ["Which pairing of optics type and fiber is correct?",
       ["SR → multimode; LR → single-mode", "SR → single-mode; LR → multimode", "Both SR and LR use copper", "Both SR and LR use multimode"],
@@ -68,13 +68,13 @@ module.exports = {
   ],
   "Key terms": [
     ["What is a ferrule in a fiber connector?",
-      ["The precise tube that holds and aligns the fiber", "The plastic latch", "The cable jacket", "A dust cap"],
+      ["The tube that holds and aligns the fiber", "The push-pull latch that locks the plug", "The outer jacket protecting the strand", "The dust cap that covers the end-face"],
       "LC ferrules are 1.25 mm; SC and ST ferrules are 2.5 mm."],
     ["What does a media converter do?",
-      ["Joins two different media types, such as copper Ethernet to fiber", "Converts AC to DC power", "Translates IPv4 to IPv6", "Converts analog voice to VoIP"],
+      ["Joins two different media, like copper to fiber", "Converts SR optics into LR optics on a switch", "Sends and receives over a single fiber strand", "Translates IPv4 packets into IPv6 packets"],
       "Media converters extend or adapt links between media."],
     ["What is a duplex fiber connector?",
-      ["A joined pair of fibers, one for transmit and one for receive", "A connector that carries power", "A single fiber for both directions", "A copper connector"],
+      ["A joined pair of fibers: one transmit, one receive", "A single strand that sends and receives on two wavelengths", "A rectangular ferrule holding 12 or 24 separate fibers", "A connector that lets a link run in full-duplex over copper"],
       "Duplex LC is the common pairing on SFPs."]
   ]
 };
