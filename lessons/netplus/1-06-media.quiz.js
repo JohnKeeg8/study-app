@@ -1,0 +1,91 @@
+module.exports = {
+  "Twisted-pair copper": [
+    ["Why are the wires in Ethernet cable twisted in pairs?",
+      ["So interference hits both wires equally and cancels out", "So the cable can run past 100 m without attenuation", "So the pairs act as a grounded shield like STP foil", "So transmit and receive pairs can swap like Auto-MDIX"],
+      "Twisting is the cable's built-in noise cancellation."],
+    ["What is the maximum length of a twisted-pair Ethernet run?",
+      ["100 meters", "55 meters", "185 meters", "500 meters"],
+      "Beyond 100 m, attenuation causes errors."],
+    ["Which category is the minimum for 10 Gbps over the full 100 meters?",
+      ["Cat 6a", "Cat 6", "Cat 5e", "Cat 5"],
+      "Cat 6 reaches only about 55 m at 10 Gbps."],
+    ["How many wire pairs does 1000BASE-T gigabit Ethernet use?",
+      ["All four pairs", "Two pairs", "Only one pair", "Three pairs"],
+      "Gigabit transmits on all four pairs at once; older 100BASE-TX used only two."]
+  ],
+  "Wiring standards and cable types": [
+    ["A cable has T568A on one end and T568B on the other. What is it?",
+      ["A crossover cable", "A straight-through cable", "A rollover cable", "A coaxial cable"],
+      "Mixing standards crosses the transmit and receive pairs."],
+    ["Which cable connects a laptop to a router's console port?",
+      ["Rollover (console) cable", "Crossover (A-to-B) cable", "Straight-through patch cable", "Twinax direct attach cable"],
+      "Rollover cables reverse the pin order for serial console connections."],
+    ["Why do most modern links work with straight-through cables even between switches?",
+      ["Auto-MDIX swaps the transmit and receive pairs automatically", "Modern switches wire every port as a rollover console port", "Straight-through cables use T568A on one end and T568B on the other", "Gigabit Ethernet sends and receives on the same single pair"],
+      "Auto-MDIX detects and adjusts automatically."],
+    ["Which cable jacket rating is required above a drop ceiling used for air handling?",
+      ["Plenum (CMP)", "Riser (CMR)", "General purpose (CM)", "Direct burial"],
+      "Plenum cable gives off little smoke and toxic fumes in a fire."]
+  ],
+  "Fiber optic": [
+    ["Which fiber type has a ~9 µm core, uses lasers, and reaches kilometers?",
+      ["Single-mode", "Multimode", "OM3 multimode", "Twinax"],
+      "The narrow core allows one light path over long distances."],
+    ["Why is multimode fiber limited to shorter distances?",
+      ["Light takes many paths in the wide core and spreads out", "Its narrow 9 µm core lets only a single path of light pass", "Its light signal is degraded by nearby EMI from motors", "It uses 1310/1550 nm lasers that fade after a few meters"],
+      "Modal dispersion blurs the signal over distance."],
+    ["10GBASE-SR optics are designed for which fiber type?",
+      ["Multimode (short reach)", "Single-mode (long reach)", "Cat 6a copper", "Coaxial cable"],
+      "SR = short reach on multimode; LR = long reach on single-mode."],
+    ["Which medium is immune to electromagnetic interference?",
+      ["Fiber optic", "Shielded twisted pair", "Unshielded twisted pair", "Coaxial cable"],
+      "Fiber carries light, which EMI doesn't affect."]
+  ],
+  "Coaxial, DAC, and AOC": [
+    ["Which coax cable and connector are used for cable-modem internet?",
+      ["RG-6 with F-type connectors", "RG-58 with RJ45 connectors", "RG-59 with LC connectors", "Twinax with BNC connectors"],
+      "RG-6 (75 Ω) with screw-on F-type connectors."],
+    ["What is the cheapest, lowest-power way to connect a server to a switch 3 meters away at 25 Gbps?",
+      ["A DAC (twinax) cable", "Single-mode fiber with LR optics", "Cat 5e", "RG-59 coax"],
+      "DAC is ideal for very short in-rack links."],
+    ["How does an active optical cable (AOC) differ from a DAC?",
+      ["It uses fiber, so it's lighter and reaches farther", "It uses twinax copper, so it's cheaper and shorter", "It needs separate SFP modules plugged into each end", "It uses RG-6 coax with F-type connectors on each end"],
+      "Both have modules permanently attached; AOC uses fiber in the middle."]
+  ],
+  "Wireless media": [
+    ["Which Wi-Fi generation added the 6 GHz band?",
+      ["Wi-Fi 6E (802.11ax)", "Wi-Fi 5 (802.11ac)", "Wi-Fi 4 (802.11n)", "802.11g"],
+      "6E extends Wi-Fi 6 into 6 GHz."],
+    ["Why does geostationary satellite internet have high latency?",
+      ["The signal travels ~35,786 km each way", "Rain fade forces every packet to resend", "LEO satellites relay each packet first", "Its radios share the 2.4 GHz Wi-Fi band"],
+      "Distance creates propagation delay, about 600 ms round trip. LEO satellites are much closer, with latency in the tens of milliseconds."],
+    ["A temporary construction site needs internet with no cabling. What's the easiest option?",
+      ["A cellular (4G/5G) router", "A dedicated leased line", "Single-mode dark fiber", "A cable modem on RG-6 coax"],
+      "Cellular is quick to deploy anywhere with coverage."],
+    ["Which Wi-Fi standard operates only in the 5 GHz band?",
+      ["802.11ac (Wi-Fi 5)", "802.11n (Wi-Fi 4)", "802.11ax (Wi-Fi 6)", "802.11g"],
+      "802.11ac is 5 GHz only."]
+  ],
+  "Common mix-ups": [
+    ["Both Cat 6 and Cat 6a support 10 Gbps. What's the key difference?",
+      ["Only Cat 6a reaches 10 Gbps over 100 m; Cat 6 manages ~55 m", "Only Cat 6 reaches 10 Gbps over 100 m; Cat 6a manages ~55 m", "Cat 6a is plenum-rated by default; Cat 6 is only riser-rated", "Cat 6a uses all four pairs for 10 Gbps; Cat 6 uses only two"],
+      "Distance at 10 Gbps is the deciding factor."],
+    ["Which statement about plenum and riser cable is correct?",
+      ["Plenum can be used in risers, but not vice versa", "Riser can be used in plenums, but not vice versa", "Plenum is the jacket rated for direct burial", "They're interchangeable in any air space"],
+      "Plenum has the stricter fire rating."],
+    ["What's the difference between attenuation and crosstalk?",
+      ["Attenuation is signal weakening over distance; crosstalk is leakage between pairs", "Crosstalk is signal weakening over distance; attenuation is leakage between pairs", "Attenuation only affects fiber links; crosstalk only affects wireless links", "Attenuation is light spreading in the fiber core; crosstalk is outside EMI"],
+      "Both degrade signals, from different causes."]
+  ],
+  "Key terms": [
+    ["What is attenuation?",
+      ["Loss of signal strength over distance", "Interference from motors and lights", "Signal leaking into an adjacent pair", "Light spreading across many fiber modes"],
+      "Every medium attenuates; exceeding rated length causes errors."],
+    ["What is EMI?",
+      ["Electromagnetic interference", "Ethernet media interface", "Encrypted media interchange", "Electrical modal impedance"],
+      "Electromagnetic interference comes from motors, lights, and power lines. It disrupts copper; fiber is immune."],
+    ["What kind of cable is used inside a DAC?",
+      ["Twinax copper", "Single-mode fiber", "RG-6 coax", "Cat 8"],
+      "DAC = direct attach copper (twinax)."]
+  ]
+};

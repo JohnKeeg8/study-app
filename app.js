@@ -55,6 +55,7 @@
       subnet: { level: "medium", input: "type", picked: false, types: {} },
       ports: { input: "type", picked: false, scope: "core", types: {}, cards: {} },
       classes: { input: "type", picked: false, types: {}, cards: {} },
+      learn: {},   // topicKey -> { read, best, last, passed, passedAt, attempts } for lessons and mini tests
       srs: {},     // spaced repetition: question id or drill key -> { box: 0–6, due: "YYYY-MM-DD" } // types: id -> { c, w, r } like topics
       settings: { domains: subject.domains.map((d) => d.id), offTopics: [], goal: 20, examCount: 90 },
       session: null,
@@ -71,10 +72,22 @@
       if (!s[k].picked) s[k].input = "type"; // fill in the blank is the default unless you switched it yourself
     });
     if (!saved.topics) backfillTopics(s);
+    backfillSchedule(s);
     // Discard a saved session from an older app version or a changed question bank.
     if (s.session && (s.session.v !== 2 || s.session.ids.some((id) => !byId[id]))) s.session = null;
     return s;
   }
+  // Questions answered correctly before spaced repetition existed have no review date. Schedule them as if
+  // reviewed today (more correct answers = longer interval) instead of treating them all as due at once.
+  function backfillSchedule(s) {
+    const today = dayKey();
+    Object.entries(s.stats).forEach(([id, st]) => {
+      if (st.last !== 1 || s.srs[id]) return;
+      const box = Math.min(st.c, 3);
+      s.srs[id] = { box, due: addDays(today, INTERVALS[box - 1]) };
+    });
+  }
+
   // Older saves only tracked individual questions; rebuild per-objective records from them.
   function backfillTopics(s) {
     Object.entries(s.stats).forEach(([id, st]) => {
@@ -219,15 +232,16 @@
     }
     store.srs[key] = r;
   }
-  // A question you've seen is due if you missed it, its review date has arrived, or it was answered
-  // before scheduling existed.
+  // A question you've seen is due if you missed it last time or its review date has arrived.
   function isDue(q) {
     const st = store.stats[q.id];
     if (!st) return false;
     if (st.last === 0) return true;
     const r = store.srs[q.id];
-    return !r || r.due <= dayKey();
+    return !!r && r.due <= dayKey();
   }
+  // Unseen or due: the only questions practice shows while any are left.
+  const isFresh = (q) => !store.stats[q.id] || isDue(q);
 
   // Append a result to a { c, w, r } record (r = recent results, newest last).
   function pushResult(rec, ok) {
@@ -286,20 +300,32 @@
       if (due.length) return weightedPick(due, due.map((q) => topicWeight(q.tk, lastTopics) * (store.stats[q.id].last === 0 ? 2 : 1))).id;
     }
 
-    const tk = weightedPick(topics, topics.map((t) => topicWeight(t, lastTopics)));
-    let pool = questionsByTopic[tk].filter((q) => !asked.has(q.id));
-    // Only if every question in this objective was already asked this session, allow repeats.
-    if (!pool.length) pool = questionsByTopic[tk].filter((q) => q.id !== prev);
-    if (!pool.length) pool = questionsByTopic[tk];
-    return pool
-      .map((q) => ({ id: q.id, r: questionRank(q) + Math.random() * 0.9 }))
-      .sort((a, b) => a.r - b.r)[0].id;
+    // Only objectives that still have something unseen or due. A question you got right isn't shown again
+    // before its review date unless everything in scope has been covered.
+    const freshTopics = topics.filter((t) => questionsByTopic[t].some((q) => !asked.has(q.id) && isFresh(q)));
+    if (freshTopics.length) {
+      const tk = weightedPick(freshTopics, freshTopics.map((t) => topicWeight(t, lastTopics)));
+      return questionsByTopic[tk]
+        .filter((q) => !asked.has(q.id) && isFresh(q))
+        .map((q) => ({ id: q.id, r: questionRank(q) + Math.random() * 0.9 }))
+        .sort((a, b) => a.r - b.r)[0].id;
+    }
+    // Everything in scope is covered: review ahead, soonest review date first.
+    const inScope = new Set(topics);
+    let ahead = questions.filter((q) => inScope.has(q.tk) && !asked.has(q.id));
+    if (!ahead.length) ahead = questions.filter((q) => inScope.has(q.tk) && q.id !== prev);
+    const dueOf = (q) => (store.srs[q.id] || {}).due || "";
+    return ahead.map((q) => ({ id: q.id, d: dueOf(q) + Math.random() })).sort((a, b) => (a.d < b.d ? -1 : 1))[0].id;
   }
 
   // Exam: random questions, split across the selected domains by their official exam weights.
   function pickExam(count) {
     const pools = subject.domains
-      .map((d) => ({ d, qs: shuffle(questions.filter((q) => q.d === d.id && inPool(q)).map((q) => q.id)) }))
+      // Unseen or due questions first, so exams don't keep showing ones you already know.
+      .map((d) => {
+        const qs = questions.filter((q) => q.d === d.id && inPool(q));
+        return { d, qs: shuffle(qs.filter(isFresh)).concat(shuffle(qs.filter((q) => !isFresh(q)))).map((q) => q.id) };
+      })
       .filter((p) => p.qs.length);
     const totalWeight = pools.reduce((n, p) => n + p.d.weight, 0);
     // Largest-remainder allocation so the counts add up exactly.
@@ -356,6 +382,7 @@
         recordAnswer(id, s.answers[i], xp);
       });
     }
+    if (s.mode === "test") recordTest(s);
     s.finished = true;
     s.celebrating = false;
     const total = s.mode === "exam" ? s.ids.length : s.answers.filter(has).length;
@@ -522,6 +549,9 @@
     let pool = pairs.filter((p) => !asked.has(p.key));
     if (!pool.length) pool = pairs.filter((p) => !last || p.key !== last.key);
     if (!pool.length) pool = pairs;
+    // Facts you got right stay away until their review date, unless nothing new or due is left.
+    const freshPairs = pool.filter((p) => { const r = store.srs[p.key]; return !r || r.due <= today; });
+    if (freshPairs.length) pool = freshPairs;
     const weights = pool.map((p) => {
       const r = store.srs[p.key];
       const a = recentAccuracy(st.types[p.t.id]);
@@ -763,7 +793,7 @@
 
       ${resumable ? `
       <div class="card stack resume">
-        <div><h2>Resume ${{ exam: "exam", review: "review", practice: "practice", subnet: "subnetting", ports: "ports", classes: "IP classes" }[s.mode]}</h2>
+        <div><h2>Resume ${{ exam: "exam", review: "review", practice: "practice", test: "mini test", subnet: "subnetting", ports: "ports", classes: "IP classes" }[s.mode]}</h2>
         <div class="small muted">${esc(s.label)} · ${s.mode === "practice" || isDrill(s.mode) ? plural(s.answers.filter(has).length, "question") + " answered" : `question ${s.index + 1} of ${s.ids.length}`}</div></div>
         <div class="btn-row">
           <button class="btn" data-action="resume">Resume</button>
@@ -783,6 +813,15 @@
 
       <button class="btn big" data-action="practice" ${canPractice ? "" : "disabled"}>${t.n ? "Keep practicing" : "Start practicing"}</button>
       <p class="small muted center hint">Endless practice. Keeps going until you stop, and focuses on what you get wrong.</p>
+
+      <button class="card feature" data-action="learn-open">
+        <span class="feature-icon">📖</span>
+        <span class="info">
+          <strong>Learn by topic</strong>
+          <span class="small muted">Read each objective, then pass its mini test · ${passedCount()} of ${allTopics.length} passed</span>
+        </span>
+        <span class="go">›</span>
+      </button>
 
       <div class="section-title">Memorization drills</div>
       ${DRILL_IDS.map((id) => `
@@ -848,7 +887,7 @@
         ${h.map((x) => `
           <div class="row small" style="padding:4px 0">
             <span>${new Date(x.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
-            <span class="muted">${{ exam: "Exam", review: "Review", subnet: "Subnetting", ports: "Ports", classes: "IP classes" }[x.mode] || "Practice"}</span>
+            <span class="muted">${{ exam: "Exam", review: "Review", test: "Mini test", subnet: "Subnetting", ports: "Ports", classes: "IP classes" }[x.mode] || "Practice"}</span>
             <span class="spacer"></span>
             <strong style="color:${pct(x.score, x.total) >= PASS_PCT ? "var(--good)" : "var(--bad)"}">${pct(x.score, x.total)}%</strong>
             <span class="muted">${x.score}/${x.total}</span>
@@ -895,7 +934,7 @@
             ${ok && !s.showWhy ? `<button class="link-btn small" data-action="why">Why?</button>` : ""}
             <button class="link-btn small" data-action="ask">Ask Claude ↗</button>
           </div>
-          <button class="btn ${ok ? "good-btn" : "bad-btn"}" data-action="next">${s.mode === "review" && isLast ? "See results" : "Continue"}</button>
+          <button class="btn ${ok ? "good-btn" : "bad-btn"}" data-action="next">${(s.mode === "review" || s.mode === "test") && isLast ? "See results" : "Continue"}</button>
         </div>`;
     }
 
@@ -997,7 +1036,8 @@
         </div>`;
     }).join("");
 
-    const header = s.mode === "exam"
+    const test = s.mode === "test" ? testHeader(s) : null;
+    const header = test ? test.header : s.mode === "exam"
       ? `
       <div class="card score-ring">
         <div class="pct ${score >= PASS_PCT ? "pass" : "fail"}">${score}%</div>
@@ -1018,12 +1058,13 @@
 
     return `
       ${header}
-      <div class="section-title">By domain</div>
-      <div class="card">${perDomain}</div>
+      ${test ? "" : `<div class="section-title">By domain</div>
+      <div class="card">${perDomain}</div>`}
 
       <div class="stack" style="margin-top:20px">
+        ${test ? test.buttons : `
         ${wrongIdx.length ? `<button class="btn" data-action="retry-wrong">Review the ${plural(wrongIdx.length, "question")} I missed</button>` : ""}
-        <button class="btn secondary" data-action="home">Back to home</button>
+        <button class="btn secondary" data-action="home">Back to home</button>`}
       </div>
 
       ${wrongIdx.length ? `<div class="section-title">Missed</div><div class="card">${review}</div>` : ""}`;
@@ -1309,6 +1350,210 @@
       ${missed ? `<div class="section-title">Missed</div><div class="card">${missed}</div>` : ""}`;
   }
 
+  // ---------- Learn: lessons per objective + section-by-section mini tests ----------
+  const LESSONS = (window.LESSONS || {})[subject.id] || {};
+  const PER_SECTION = 2; // mini test questions drawn from each lesson section
+  const FALLBACK_SIZE = 10; // for a lesson without section quizzes
+  const passMark = (n) => Math.ceil(n * 0.8); // 80% to pass
+  const PASS_BONUS_XP = 50;
+  const learnRec = (tk) => store.learn[tk] || { read: false, best: 0, passed: false, attempts: 0 };
+  const bestText = (r) => `${r.best}/${r.of || 10}`; // records from before section tests were out of 10
+  const lessonSections = (tk) => [...(LESSONS[tk] || "").matchAll(/^## (.+)$/gm)].map((m) => m[1].trim());
+  const sectionQs = (tk, sec) => (questionsByTopic[tk] || []).filter((q) => q.s === sec);
+  function testSize(tk) {
+    const n = lessonSections(tk).reduce((sum, sec) => sum + Math.min(PER_SECTION, sectionQs(tk, sec).length), 0);
+    return n || Math.min(FALLBACK_SIZE, (questionsByTopic[tk] || []).length);
+  }
+  const passedCount = () => allTopics.filter((x) => learnRec(x.tk).passed).length;
+
+  // Minimal Markdown for lessons: ## and ### headings, paragraphs, - / 1. lists (one level of nesting),
+  // | tables |, > callouts, **bold**, *italic*, `code`. Text is escaped before formatting.
+  function inlineMd(text) {
+    // Code spans become placeholders first, so **bold `code` text** works and * inside code stays literal.
+    const codes = [];
+    return esc(text).replace(/`([^`]*)`/g, (m, c) => `\u0000${codes.push(c) - 1}\u0000`)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, "$1<em>$2</em>")
+      .replace(/\u0000(\d+)\u0000/g, (m, n) => `<code>${codes[n]}</code>`);
+  }
+  function renderMd(src) {
+    const lines = src.split("\n");
+    const out = [];
+    let para = [];
+    const flush = () => { if (para.length) { out.push(`<p>${inlineMd(para.join(" "))}</p>`); para = []; } };
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^# /.test(line)) continue; // the title is shown separately
+      if (!line.trim()) { flush(); continue; }
+      if (/^## /.test(line)) { flush(); out.push(`<h3>${inlineMd(line.slice(3))}</h3>`); continue; }
+      if (/^### /.test(line)) { flush(); out.push(`<h4>${inlineMd(line.slice(4))}</h4>`); continue; }
+      if (/^> /.test(line)) { flush(); out.push(`<div class="callout">${inlineMd(line.slice(2))}</div>`); continue; }
+      if (/^\|/.test(line)) {
+        flush();
+        const rows = [];
+        while (i < lines.length && /^\|/.test(lines[i])) rows.push(lines[i++]);
+        i--;
+        const cells = (r) => r.replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+        const body = rows.filter((r, k) => k !== 1 || !/^\|[\s:|-]+\|$/.test(r));
+        out.push(`<div class="table-wrap"><table class="lesson-table"><thead><tr>${cells(body[0]).map((c) => `<th>${inlineMd(c)}</th>`).join("")}</tr></thead><tbody>${
+          body.slice(1).map((r) => `<tr>${cells(r).map((c) => `<td>${inlineMd(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
+        continue;
+      }
+      const li = line.match(/^(\s*)(- |\d+\. )(.*)$/);
+      if (li) {
+        flush();
+        const ordered = /\d/.test(li[2]);
+        const items = [];
+        while (i < lines.length) {
+          const m = lines[i].match(/^(\s*)(- |\d+\. )(.*)$/);
+          if (!m) break;
+          if (m[1].length >= 2 && items.length) items[items.length - 1].sub.push(m[3]);
+          else items.push({ text: m[3], sub: [] });
+          i++;
+        }
+        i--;
+        const tag = ordered ? "ol" : "ul";
+        out.push(`<${tag}>${items.map((it) => `<li>${inlineMd(it.text)}${it.sub.length ? `<ul>${it.sub.map((x) => `<li>${inlineMd(x)}</li>`).join("")}</ul>` : ""}</li>`).join("")}</${tag}>`);
+        continue;
+      }
+      para.push(line.trim());
+    }
+    flush();
+    return out.join("");
+  }
+
+  // Mini test: PER_SECTION questions from every lesson section, in lesson order, so passing means you
+  // understood the whole topic. Within a section, questions you haven't seen (or that are due) come first,
+  // so retakes get new questions.
+  const freshFirst = (qs) => shuffle(qs.filter(isFresh)).concat(shuffle(qs.filter((q) => !isFresh(q))));
+  function startTest(tk) {
+    let ids = lessonSections(tk).flatMap((sec) => freshFirst(sectionQs(tk, sec)).slice(0, PER_SECTION).map((q) => q.id));
+    if (!ids.length) ids = freshFirst(questionsByTopic[tk] || []).slice(0, FALLBACK_SIZE).map((q) => q.id);
+    startSession("test", ids, tk.split("|")[1] + " test", { topic: tk });
+  }
+
+  // Called when a test session finishes.
+  function recordTest(s) {
+    const score = s.ids.filter((id, i) => s.answers[i] === byId[id].a).length;
+    const of = s.ids.length;
+    const rec = learnRec(s.topic);
+    rec.attempts++;
+    if (score / of >= rec.best / (rec.of || 10)) { rec.best = score; rec.of = of; }
+    rec.last = score;
+    s.score = score;
+    s.of = of;
+    s.passed = score >= passMark(of);
+    s.firstPass = s.passed && !rec.passed;
+    if (s.firstPass) {
+      rec.passed = true;
+      rec.passedAt = dayKey();
+      store.xp += PASS_BONUS_XP;
+      s.xp += PASS_BONUS_XP;
+    }
+    store.learn[s.topic] = rec;
+  }
+
+  function topicStatus(tk) {
+    const r = learnRec(tk);
+    if (r.passed) return { icon: "✓", cls: "passed", text: `Passed · best ${bestText(r)}` };
+    if (r.attempts) return { icon: "↻", cls: "tried", text: `Best ${bestText(r)} · need 80%` };
+    if (r.read) return { icon: "📖", cls: "read", text: "Read · test not taken" };
+    return { icon: "○", cls: "", text: "Not started" };
+  }
+
+  function viewLearnHub() {
+    const total = allTopics.length;
+    const passed = passedCount();
+    const domains = subject.domains.map((d) => {
+      const done = d.topics.filter((t) => learnRec(topicKey(d.id, t)).passed).length;
+      const rows = d.topics.map((t) => {
+        const tk = topicKey(d.id, t);
+        const st = topicStatus(tk);
+        return `
+          <button class="weak lesson-row" data-lesson="${esc(tk)}">
+            <span class="status ${st.cls}">${st.icon}</span>
+            <div class="info">
+              <div class="name">${esc(t)}</div>
+              <div class="small muted">${st.text}</div>
+            </div>
+            <span class="go">›</span>
+          </button>`;
+      }).join("");
+      return `
+        <div class="section-title">${d.id}.0 ${esc(d.name)} <span class="normal">· ${done}/${d.topics.length} passed${done === d.topics.length ? " 🏅" : ""}</span></div>
+        <div class="card">${rows}</div>`;
+    }).join("");
+    return `
+      <div class="topbar">
+        <button class="icon-btn back" data-action="home-screen" aria-label="Back to home">‹</button>
+        <div class="title"><h1>Learn</h1></div>
+        <div class="pill ${today().met ? "lit" : ""}" title="Day streak">🔥 ${streak()}</div>
+        <div class="pill" title="Total XP">⚡ ${store.xp}</div>
+      </div>
+      <div class="card stack">
+        <div class="row"><strong>${passed} of ${total} topics passed</strong><span class="spacer"></span><span class="small muted">${pct(passed, total)}%</span></div>
+        <div class="bar"><span style="width:${pct(passed, total)}%;background:var(--flame)"></span></div>
+        <p class="small muted">Read a topic, then take its mini test: ${PER_SECTION} questions from every section of the lesson, so it checks the whole topic. Score 80% or better to pass and earn the badge (+${PASS_BONUS_XP} XP the first time). Pass every topic in a domain to earn the domain's 🏅.</p>
+      </div>
+      ${domains}`;
+  }
+
+  function viewLesson(tk) {
+    const [d, t] = [Number(tk.split("|")[0]), tk.split("|").slice(1).join("|")];
+    const st = topicStatus(tk);
+    const r = learnRec(tk);
+    const idx = allTopics.findIndex((x) => x.tk === tk);
+    const prev = allTopics[idx - 1], nextT = allTopics[idx + 1];
+    const n = testSize(tk);
+    const sections = lessonSections(tk).filter((sec) => sectionQs(tk, sec).length);
+    return `
+      <div class="topbar">
+        <button class="icon-btn back" data-action="learn-open" aria-label="Back to Learn">‹</button>
+        <div class="title"><div class="code">${d}.0 ${esc(domainName(d))}</div><h1>${esc(t)}</h1></div>
+      </div>
+      ${r.passed ? `<div class="card pass-banner">✓ <strong>Passed</strong> · best ${bestText(r)}${r.passedAt ? ` · ${new Date(r.passedAt + "T12:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : ""}</div>` : ""}
+      <article class="card lesson">${renderMd(LESSONS[tk] || "*No lesson yet.*")}</article>
+      <div class="card stack test-cta">
+        <div>
+          <h2>${r.passed ? "Retake the mini test" : "Ready? Take the mini test"}</h2>
+          <p class="small muted">${n} questions, ${sections.length ? `${PER_SECTION} from each of the ${sections.length} sections above` : `on ${esc(t)}`}. Score ${passMark(n)}/${n} to pass.${r.attempts && !r.passed ? ` Your best so far: ${bestText(r)}.` : ""}</p>
+        </div>
+        <button class="btn big" data-test="${esc(tk)}">Start mini test</button>
+        <button class="btn secondary" data-focus="${esc(tk)}">Practice this topic (endless)</button>
+      </div>
+      <div class="row lesson-nav">
+        ${prev ? `<button class="link-btn small" data-lesson="${esc(prev.tk)}">‹ ${esc(prev.t)}</button>` : ""}
+        <span class="spacer"></span>
+        ${nextT ? `<button class="link-btn small" data-lesson="${esc(nextT.tk)}">${esc(nextT.t)} ›</button>` : ""}
+      </div>`;
+  }
+
+  function testHeader(s) {
+    const idx = allTopics.findIndex((x) => x.tk === s.topic);
+    const nextT = allTopics.slice(idx + 1).find((x) => !learnRec(x.tk).passed) || allTopics.find((x) => !learnRec(x.tk).passed);
+    // Sections with a missed question, in lesson order, so you know exactly what to re-read.
+    const weakSecs = [];
+    s.ids.forEach((id, i) => { const q = byId[id]; if (q.s && s.answers[i] !== q.a && !weakSecs.includes(q.s)) weakSecs.push(q.s); });
+    return {
+      header: `
+        <div class="card score-ring test-result ${s.passed ? "passed" : ""}">
+          <div class="badge-icon">${s.passed ? "🏅" : "📖"}</div>
+          <h2>${s.passed ? (s.firstPass ? "Topic passed!" : "Passed again!") : "Not yet"}</h2>
+          <div class="pct ${s.passed ? "pass" : "fail"}">${s.score}/${s.of || s.ids.length}</div>
+          <div class="small muted">${esc(s.topic.split("|")[1])} · ${s.passed
+            ? (s.firstPass ? `Badge earned · +${PASS_BONUS_XP} XP bonus · ${passedCount()} of ${allTopics.length} topics passed` : `Best score ${bestText(learnRec(s.topic))}`)
+            : `You need ${passMark(s.of || s.ids.length)}/${s.of || s.ids.length}. Review the lesson and the missed questions below, then try again.`}</div>
+        </div>
+        ${weakSecs.length ? `<div class="card stack">
+          <strong>${s.passed ? "Worth a second look" : "Review these sections"}</strong>
+          <ul class="weak-secs">${weakSecs.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+        </div>` : ""}`,
+      buttons: `
+        ${s.passed && nextT ? `<button class="btn" data-lesson="${esc(nextT.tk)}">Next topic: ${esc(nextT.t)}</button>` : ""}
+        <button class="btn ${s.passed ? "secondary" : ""}" data-test="${esc(s.topic)}">${s.passed ? "Retake test" : "Try again"}</button>
+        <button class="btn secondary" data-lesson="${esc(s.topic)}">Back to the lesson</button>`
+    };
+  }
+
   // ---------- Timer ----------
   let timerHandle = null;
   function timeLeft() {
@@ -1334,6 +1579,7 @@
   // ---------- Render ----------
   let screen = "home"; // "home" | "drill" | "session"
   let currentDrill = "subnet"; // which drill hub is open
+  let currentLesson = null;    // topicKey of the open lesson
   const expanded = new Set(); // domain ids whose objective list is open
   function render() {
     const s = store.session;
@@ -1343,6 +1589,10 @@
       else app.innerHTML = s.finished ? viewResults() : s.celebrating ? viewCelebrate() : viewQuiz();
       const input = document.getElementById("typed");
       if (input) input.focus();
+    } else if (screen === "learn") {
+      app.innerHTML = viewLearnHub();
+    } else if (screen === "lesson") {
+      app.innerHTML = viewLesson(currentLesson);
     } else if (screen === "drill") {
       app.innerHTML = viewDrillHub(currentDrill);
     } else {
@@ -1368,6 +1618,14 @@
     if (el.dataset.level) { store.subnet.level = el.dataset.level; save(); return render(); }
     if (el.dataset.scope) { store.ports.scope = el.dataset.scope; save(); return render(); }
     if (el.dataset.input) { store[currentDrill].input = el.dataset.input; store[currentDrill].picked = true; save(); return render(); }
+    if (el.dataset.lesson) {
+      currentLesson = el.dataset.lesson;
+      if (store.session && store.session.finished) store.session = null;
+      store.learn[currentLesson] = Object.assign(learnRec(currentLesson), { read: true });
+      save();
+      return go("lesson");
+    }
+    if (el.dataset.test) return startTest(el.dataset.test);
     if (el.dataset.drillOpen) { currentDrill = el.dataset.drillOpen; return go("drill"); }
     if (el.dataset.drillFocus) return startDrill(currentDrill, el.dataset.drillFocus);
     if (el.dataset.drillChoice !== undefined) return answerDrill(Number(el.dataset.drillChoice));
@@ -1391,6 +1649,9 @@
     switch (el.dataset.action) {
       case "home-screen":
         return go("home");
+      case "learn-open":
+        if (store.session && store.session.finished) store.session = null;
+        return go("learn");
       case "drill-start":
         return startDrill(currentDrill, null);
       case "drill-again":
@@ -1421,6 +1682,13 @@
         save();
         return render();
       case "quit":
+        if (s.mode === "test") {
+          // Leaving a mini test abandons it (nothing is recorded as an attempt) and returns to the lesson.
+          currentLesson = s.topic;
+          store.session = null;
+          save();
+          return go("lesson");
+        }
         return s.mode === "practice" || isDrill(s.mode) ? endPractice() : go("home");
       case "home":
         store.session = null;
