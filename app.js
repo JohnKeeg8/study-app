@@ -1350,12 +1350,20 @@
       ${missed ? `<div class="section-title">Missed</div><div class="card">${missed}</div>` : ""}`;
   }
 
-  // ---------- Learn: lessons per objective + 10-question mini tests ----------
+  // ---------- Learn: lessons per objective + section-by-section mini tests ----------
   const LESSONS = (window.LESSONS || {})[subject.id] || {};
-  const TEST_SIZE = 10;
-  const TEST_PASS = 8; // 8/10 to pass
+  const PER_SECTION = 2; // mini test questions drawn from each lesson section
+  const FALLBACK_SIZE = 10; // for a lesson without section quizzes
+  const passMark = (n) => Math.ceil(n * 0.8); // 80% to pass
   const PASS_BONUS_XP = 50;
   const learnRec = (tk) => store.learn[tk] || { read: false, best: 0, passed: false, attempts: 0 };
+  const bestText = (r) => `${r.best}/${r.of || 10}`; // records from before section tests were out of 10
+  const lessonSections = (tk) => [...(LESSONS[tk] || "").matchAll(/^## (.+)$/gm)].map((m) => m[1].trim());
+  const sectionQs = (tk, sec) => (questionsByTopic[tk] || []).filter((q) => q.s === sec);
+  function testSize(tk) {
+    const n = lessonSections(tk).reduce((sum, sec) => sum + Math.min(PER_SECTION, sectionQs(tk, sec).length), 0);
+    return n || Math.min(FALLBACK_SIZE, (questionsByTopic[tk] || []).length);
+  }
   const passedCount = () => allTopics.filter((x) => learnRec(x.tk).passed).length;
 
   // Minimal Markdown for lessons: ## headings, paragraphs, - / 1. lists (one level of nesting),
@@ -1410,22 +1418,27 @@
     return out.join("");
   }
 
-  // Mini test: questions you haven't seen (or that are due) first, so retakes get new questions.
+  // Mini test: PER_SECTION questions from every lesson section, in lesson order, so passing means you
+  // understood the whole topic. Within a section, questions you haven't seen (or that are due) come first,
+  // so retakes get new questions.
+  const freshFirst = (qs) => shuffle(qs.filter(isFresh)).concat(shuffle(qs.filter((q) => !isFresh(q))));
   function startTest(tk) {
-    const qs = questionsByTopic[tk] || [];
-    const ids = shuffle(qs.filter(isFresh)).concat(shuffle(qs.filter((q) => !isFresh(q)))).slice(0, TEST_SIZE).map((q) => q.id);
+    let ids = lessonSections(tk).flatMap((sec) => freshFirst(sectionQs(tk, sec)).slice(0, PER_SECTION).map((q) => q.id));
+    if (!ids.length) ids = freshFirst(questionsByTopic[tk] || []).slice(0, FALLBACK_SIZE).map((q) => q.id);
     startSession("test", ids, tk.split("|")[1] + " test", { topic: tk });
   }
 
   // Called when a test session finishes.
   function recordTest(s) {
     const score = s.ids.filter((id, i) => s.answers[i] === byId[id].a).length;
+    const of = s.ids.length;
     const rec = learnRec(s.topic);
     rec.attempts++;
-    rec.best = Math.max(rec.best, score);
+    if (score / of >= rec.best / (rec.of || 10)) { rec.best = score; rec.of = of; }
     rec.last = score;
     s.score = score;
-    s.passed = score >= TEST_PASS;
+    s.of = of;
+    s.passed = score >= passMark(of);
     s.firstPass = s.passed && !rec.passed;
     if (s.firstPass) {
       rec.passed = true;
@@ -1438,8 +1451,8 @@
 
   function topicStatus(tk) {
     const r = learnRec(tk);
-    if (r.passed) return { icon: "✓", cls: "passed", text: `Passed · best ${r.best}/${TEST_SIZE}` };
-    if (r.attempts) return { icon: "↻", cls: "tried", text: `Best ${r.best}/${TEST_SIZE} · need ${TEST_PASS}` };
+    if (r.passed) return { icon: "✓", cls: "passed", text: `Passed · best ${bestText(r)}` };
+    if (r.attempts) return { icon: "↻", cls: "tried", text: `Best ${bestText(r)} · need 80%` };
     if (r.read) return { icon: "📖", cls: "read", text: "Read · test not taken" };
     return { icon: "○", cls: "", text: "Not started" };
   }
@@ -1476,7 +1489,7 @@
       <div class="card stack">
         <div class="row"><strong>${passed} of ${total} topics passed</strong><span class="spacer"></span><span class="small muted">${pct(passed, total)}%</span></div>
         <div class="bar"><span style="width:${pct(passed, total)}%;background:var(--flame)"></span></div>
-        <p class="small muted">Read a topic, then take its ${TEST_SIZE}-question mini test. Score ${TEST_PASS}/${TEST_SIZE} or better to pass and earn the badge (+${PASS_BONUS_XP} XP the first time). Pass every topic in a domain to earn the domain's 🏅.</p>
+        <p class="small muted">Read a topic, then take its mini test: ${PER_SECTION} questions from every section of the lesson, so it checks the whole topic. Score 80% or better to pass and earn the badge (+${PASS_BONUS_XP} XP the first time). Pass every topic in a domain to earn the domain's 🏅.</p>
       </div>
       ${domains}`;
   }
@@ -1487,17 +1500,19 @@
     const r = learnRec(tk);
     const idx = allTopics.findIndex((x) => x.tk === tk);
     const prev = allTopics[idx - 1], nextT = allTopics[idx + 1];
+    const n = testSize(tk);
+    const sections = lessonSections(tk).filter((sec) => sectionQs(tk, sec).length);
     return `
       <div class="topbar">
         <button class="icon-btn back" data-action="learn-open" aria-label="Back to Learn">‹</button>
         <div class="title"><div class="code">${d}.0 ${esc(domainName(d))}</div><h1>${esc(t)}</h1></div>
       </div>
-      ${r.passed ? `<div class="card pass-banner">✓ <strong>Passed</strong> · best ${r.best}/${TEST_SIZE}${r.passedAt ? ` · ${new Date(r.passedAt + "T12:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : ""}</div>` : ""}
+      ${r.passed ? `<div class="card pass-banner">✓ <strong>Passed</strong> · best ${bestText(r)}${r.passedAt ? ` · ${new Date(r.passedAt + "T12:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : ""}</div>` : ""}
       <article class="card lesson">${renderMd(LESSONS[tk] || "*No lesson yet.*")}</article>
       <div class="card stack test-cta">
         <div>
           <h2>${r.passed ? "Retake the mini test" : "Ready? Take the mini test"}</h2>
-          <p class="small muted">${TEST_SIZE} questions on ${esc(t)}. Score ${TEST_PASS}/${TEST_SIZE} to pass.${r.attempts && !r.passed ? ` Your best so far: ${r.best}/${TEST_SIZE}.` : ""}</p>
+          <p class="small muted">${n} questions, ${sections.length ? `${PER_SECTION} from each of the ${sections.length} sections above` : `on ${esc(t)}`}. Score ${passMark(n)}/${n} to pass.${r.attempts && !r.passed ? ` Your best so far: ${bestText(r)}.` : ""}</p>
         </div>
         <button class="btn big" data-test="${esc(tk)}">Start mini test</button>
         <button class="btn secondary" data-focus="${esc(tk)}">Practice this topic (endless)</button>
@@ -1512,16 +1527,23 @@
   function testHeader(s) {
     const idx = allTopics.findIndex((x) => x.tk === s.topic);
     const nextT = allTopics.slice(idx + 1).find((x) => !learnRec(x.tk).passed) || allTopics.find((x) => !learnRec(x.tk).passed);
+    // Sections with a missed question, in lesson order, so you know exactly what to re-read.
+    const weakSecs = [];
+    s.ids.forEach((id, i) => { const q = byId[id]; if (q.s && s.answers[i] !== q.a && !weakSecs.includes(q.s)) weakSecs.push(q.s); });
     return {
       header: `
         <div class="card score-ring test-result ${s.passed ? "passed" : ""}">
           <div class="badge-icon">${s.passed ? "🏅" : "📖"}</div>
           <h2>${s.passed ? (s.firstPass ? "Topic passed!" : "Passed again!") : "Not yet"}</h2>
-          <div class="pct ${s.passed ? "pass" : "fail"}">${s.score}/${TEST_SIZE}</div>
+          <div class="pct ${s.passed ? "pass" : "fail"}">${s.score}/${s.of || s.ids.length}</div>
           <div class="small muted">${esc(s.topic.split("|")[1])} · ${s.passed
-            ? (s.firstPass ? `Badge earned · +${PASS_BONUS_XP} XP bonus · ${passedCount()} of ${allTopics.length} topics passed` : `Best score ${learnRec(s.topic).best}/${TEST_SIZE}`)
-            : `You need ${TEST_PASS}/${TEST_SIZE}. Review the lesson and the missed questions below, then try again.`}</div>
-        </div>`,
+            ? (s.firstPass ? `Badge earned · +${PASS_BONUS_XP} XP bonus · ${passedCount()} of ${allTopics.length} topics passed` : `Best score ${bestText(learnRec(s.topic))}`)
+            : `You need ${passMark(s.of || s.ids.length)}/${s.of || s.ids.length}. Review the lesson and the missed questions below, then try again.`}</div>
+        </div>
+        ${weakSecs.length ? `<div class="card stack">
+          <strong>${s.passed ? "Worth a second look" : "Review these sections"}</strong>
+          <ul class="weak-secs">${weakSecs.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+        </div>` : ""}`,
       buttons: `
         ${s.passed && nextT ? `<button class="btn" data-lesson="${esc(nextT.tk)}">Next topic: ${esc(nextT.t)}</button>` : ""}
         <button class="btn ${s.passed ? "secondary" : ""}" data-test="${esc(s.topic)}">${s.passed ? "Retake test" : "Try again"}</button>

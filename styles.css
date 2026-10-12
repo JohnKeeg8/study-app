@@ -358,3 +358,5 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
 .test-result .badge-icon { font-size: 3rem; line-height: 1; margin-bottom: 6px; }
 .test-result.passed { border-color: var(--good); }
 .test-result .pct { margin: 8px 0; }
+.weak-secs { margin: 0; padding-left: 20px; }
+.weak-secs li { margin: 2px 0; }
