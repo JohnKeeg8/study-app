@@ -323,3 +323,38 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
 .sheet .ref td.wrap { white-space: normal; min-width: 140px; }
 .sheet .ref td { vertical-align: top; }
 .sheet .ref td:last-child, .sheet .ref th:last-child { text-align: left; }
+
+/* Learn */
+.lesson-row { align-items: center; }
+.status {
+  flex: none;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  font-weight: 800;
+  background: var(--card-2);
+  color: var(--muted);
+}
+.status.passed { background: var(--good); color: #0d1117; }
+.status.tried { background: var(--flame-soft); color: var(--flame); }
+.status.read { background: var(--accent-soft); }
+.lesson { line-height: 1.6; }
+.lesson h3 { font-size: 1.05rem; margin: 22px 0 8px; color: var(--accent); }
+.lesson h3:first-child { margin-top: 4px; }
+.lesson p { margin: 0 0 10px; }
+.lesson ul, .lesson ol { margin: 0 0 12px; padding-left: 22px; }
+.lesson li + li { margin-top: 4px; }
+.lesson li ul { margin: 4px 0 0; }
+.lesson code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; background: var(--card-2); padding: 1px 5px; border-radius: 5px; }
+.lesson .table-wrap { margin: 4px 0 14px; overflow-x: auto; }
+.lesson-table { border-collapse: collapse; font-size: 0.85rem; width: 100%; }
+.lesson-table th, .lesson-table td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.lesson-table th { color: var(--muted); font-weight: 700; white-space: nowrap; }
+.callout { margin: 12px 0; padding: 12px 14px; border-radius: 12px; background: var(--accent-soft); border-left: 4px solid var(--accent); font-size: 0.92rem; }
+.pass-banner { margin-bottom: 12px; border-color: var(--good); background: var(--good-soft); color: var(--text); }
+.test-cta { margin-top: 12px; border-color: var(--accent); }
+.test-cta .btn.big { margin-top: 0; }
+.lesson-nav { margin: 14px 2px 8px; }
+.test-result .badge-icon { font-size: 3rem; line-height: 1; margin-bottom: 6px; }
+.test-result.passed { border-color: var(--good); }
+.test-result .pct { margin: 8px 0; }
