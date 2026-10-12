@@ -38,7 +38,7 @@ module.exports = {
       ["Yes; it covers anyone handling EU residents' personal data", "No; GDPR applies only to companies based in the EU", "Only if the retailer has a physical office in France", "Only for the card data, which GDPR treats as personal"],
       "GDPR follows the data subject, not the company's location."],
     ["A customer asks a company to delete all the personal data it holds about them. Which GDPR right is this?",
-      ["Right to erasure (right to be forgotten)", "Right to data portability", "Right of access to their data", "Right to object to processing"],
+      ["Right to erasure (to be forgotten)", "Right to data portability", "Right of access to their data", "Right to object to processing"],
       "Individuals can request deletion of their personal data."],
     ["A company discovers a breach of EU customers' personal data on Monday morning. By when should it generally notify the supervisory authority?",
       ["Within 72 hours of becoming aware of it", "Within one year of the date of the breach", "Within 30 days of the end of the quarter", "Only once affected customers complain"],
