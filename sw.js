@@ -1,5 +1,5 @@
 // Bump CACHE whenever app files or questions change so phones pick up the update.
-const CACHE = "study-app-v9";
+const CACHE = "study-app-v10";
 const ASSETS = [
   "./",
   "index.html",
@@ -16,8 +16,9 @@ const ASSETS = [
   "icons/apple-touch-icon.png"
 ];
 
+// cache: "reload" skips the browser's HTTP cache so a new version never caches old files.
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (e) => {
@@ -32,7 +33,9 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
   e.respondWith(
-    fetch(e.request)
+    // "no-cache" makes the browser check with the server instead of reusing a stale HTTP-cached copy.
+    // (A navigation request can't be copied with options, so page loads are re-requested by URL.)
+    fetch(e.request.mode === "navigate" ? e.request.url : e.request, { cache: "no-cache" })
       .then((res) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(e.request, copy));
