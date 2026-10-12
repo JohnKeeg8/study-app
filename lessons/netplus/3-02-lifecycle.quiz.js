@@ -1,0 +1,80 @@
+module.exports = {
+  "The hardware life cycle": [
+    ["What is the correct order of the hardware life cycle?",
+      ["Procure, deploy, operate/maintain, decommission/dispose", "Deploy, procure, dispose, operate", "Operate, procure, deploy, dispose", "Dispose, deploy, procure, operate"],
+      "Equipment is bought, installed, run, then retired."],
+    ["Why track life-cycle dates in the asset inventory?",
+      ["So refreshes can be budgeted before devices go unsupported", "To speed up routing", "To assign VLANs automatically", "To reduce cable length"],
+      "Planning ahead avoids emergency replacements."],
+    ["In which life-cycle stage do patching and monitoring mainly happen?",
+      ["Operate and maintain", "Procure", "Decommission", "Dispose"],
+      "Day-to-day upkeep happens while the device is in service."]
+  ],
+  "EOL and EOS": [
+    ["What does end of life (end of sale) mean?",
+      ["The vendor has stopped selling the product", "The device has failed", "The warranty just started", "The firmware was updated"],
+      "EOL starts the countdown toward end of support."],
+    ["Why is running end-of-support (EOS) equipment a security risk?",
+      ["Newly discovered vulnerabilities won't be patched", "It uses more power", "It can't run IPv4", "It needs plenum cable"],
+      "No more security fixes are released."],
+    ["An EOS router has a critical vulnerability with no patch. What's the best long-term action?",
+      ["Replace it with a supported model", "Ignore it", "Disable logging", "Change its hostname"],
+      "Compensating controls only reduce risk temporarily."],
+    ["What are compensating controls?",
+      ["Temporary measures, like ACLs, that reduce risk when the real fix isn't possible yet", "Permanent replacements", "Vendor patches", "Warranty extensions"],
+      "They buy time until the device is replaced."]
+  ],
+  "Software management": [
+    ["What should you do first when planning a firmware upgrade?",
+      ["Read the release notes for known issues and required upgrade paths", "Upload the firmware during business hours", "Factory-reset the device", "Delete the old config"],
+      "Some upgrades require intermediate versions."],
+    ["What does verifying a firmware file's SHA-256 hash prove?",
+      ["The file wasn't corrupted or tampered with", "The file is the newest version", "The device has enough memory", "The license is valid"],
+      "Compare it with the vendor's published hash."],
+    ["Why back up the configuration and image before upgrading?",
+      ["So you can roll back if the upgrade fails", "To speed up the upgrade", "Because upgrades delete licenses", "To meet PoE requirements"],
+      "A rollback plan needs something to roll back to."],
+    ["Why might an organization run the vendor's 'recommended' release instead of the newest one?",
+      ["Recommended releases are more mature and stable", "The newest release is always insecure", "Recommended releases are free", "The newest release removes IPv4"],
+      "Field-proven versions reduce surprises."],
+    ["What can happen when a network device's license expires?",
+      ["Features, updates, or support access can be disabled", "The device speeds up", "VLANs are deleted", "Nothing ever happens"],
+      "Track licenses and subscriptions."]
+  ],
+  "Decommissioning": [
+    ["Why must a switch's configuration be wiped before it's retired?",
+      ["Configs can contain credentials, SNMP strings, and network details useful to attackers", "To make it faster for the next owner", "Wiping isn't necessary", "To free up PoE budget"],
+      "Leftover configs leak sensitive information."],
+    ["What should be obtained after physically destroying sensitive storage media?",
+      ["A certificate of destruction", "A new warranty", "An SLA", "A DHCP reservation"],
+      "It documents that the data can't be recovered."],
+    ["After decommissioning a firewall, what else should be removed?",
+      ["Its accounts, certificates, VPN tunnels, firewall rules, and monitoring entries", "Nothing else", "Only its hostname", "The building's DNS server"],
+      "Orphaned rules and credentials widen the attack surface."],
+    ["Which records should be updated after a device is retired?",
+      ["Asset inventory, diagrams, IPAM, and documentation", "Only the AUP", "Only the SLA", "No records"],
+      "Stale records cause confusion and false alerts."]
+  ],
+  "Common mix-ups": [
+    ["EOL vs EOS: which is correct?",
+      ["EOL = no longer sold; EOS = no more patches or support", "EOL = no more patches; EOS = no longer sold", "They mean the same thing", "EOS means the device is new"],
+      "EOS is the one that creates security risk."],
+    ["Is a quick format enough before disposing of a drive that held sensitive data?",
+      ["No; sanitize (overwrite or degauss) or physically destroy it", "Yes, always", "Only for SSDs", "Only for USB drives"],
+      "Quick formats can leave recoverable data."],
+    ["Does a matching hash prove that firmware is the latest version?",
+      ["No; it proves the file is authentic and uncorrupted", "Yes", "Only for Cisco devices", "Only if it's SHA-1"],
+      "Integrity and version are different questions."]
+  ],
+  "Key terms": [
+    ["What are release notes?",
+      ["Vendor documentation of changes and known issues in a software version", "A list of IP addresses", "A change approval form", "A backup schedule"],
+      "Always read them before upgrading."],
+    ["What is a hash used for when downloading firmware?",
+      ["Verifying the file's integrity", "Encrypting the device", "Assigning a license", "Compressing the file"],
+      "Matching hashes mean the file is intact."],
+    ["What is a certificate of destruction?",
+      ["Proof that storage media was destroyed", "A TLS certificate for a retired server", "A vendor EOL notice", "A warranty claim"],
+      "It provides an audit trail for disposal."]
+  ]
+};

@@ -1,0 +1,113 @@
+module.exports = {
+  "Switches and routers": [
+    ["How does a switch learn which port a device is on?",
+      ["By reading the source MAC address of frames arriving on each port", "By asking a DHCP server", "By reading the destination IP address", "From the router's routing table"],
+      "Switches record the source MAC of incoming frames in their MAC (CAM) table."],
+    ["What does a switch do with a frame whose destination MAC is not yet in its table?",
+      ["Floods it out every port in the VLAN except the incoming one", "Drops it", "Sends it to the default gateway", "Returns it to the sender"],
+      "Unknown unicast frames are flooded; once the destination replies, the switch learns its port."],
+    ["Why is each router interface its own broadcast domain?",
+      ["Routers don't forward broadcasts by default", "Routers forward all broadcasts", "Routers only work with multicast", "Each interface has its own MAC table"],
+      "Broadcasts stop at a router, so each interface's network is separate."],
+    ["Which device both switches within VLANs and routes between them?",
+      ["Layer 3 (multilayer) switch", "Hub", "Repeater", "Modem"],
+      "Multilayer switches combine Layer 2 switching and Layer 3 routing."]
+  ],
+  "Firewalls": [
+    ["What does a stateful firewall do that a stateless packet filter doesn't?",
+      ["Tracks connections and automatically allows return traffic for sessions it saw start", "Inspects only MAC addresses", "Blocks all traffic by default with no rules", "Encrypts traffic between zones"],
+      "Stateful firewalls keep a state table of active connections."],
+    ["Which firewall type adds application awareness, built-in IPS, and URL filtering?",
+      ["Next-generation firewall (NGFW)", "Stateless packet filter", "Host-based firewall", "Hub-based firewall"],
+      "NGFWs identify applications regardless of port and add threat-prevention features."],
+    ["A firewall that runs as software on one laptop and protects only that laptop is a:",
+      ["Host-based firewall", "Network-based NGFW", "Stateless router ACL", "Screened subnet"],
+      "Host-based firewalls protect the single endpoint they run on."]
+  ],
+  "IDS and IPS": [
+    ["Where is an IDS typically placed?",
+      ["Out of band, watching a copy of traffic from a SPAN port or TAP", "Inline between the internet and the firewall", "Inside the DHCP server", "On the console port of a switch"],
+      "An IDS analyzes copied traffic so it can't interrupt the flow."],
+    ["What is the main operational risk of an IPS?",
+      ["A false positive can block legitimate traffic", "It can't detect known attacks", "It only works on wireless traffic", "It requires a separate internet link"],
+      "Because an IPS is inline and can drop traffic, mistakes affect real users."],
+    ["Which detection method can catch brand-new attacks but tends to generate more false positives?",
+      ["Anomaly-based detection", "Signature-based detection", "Hash matching", "Port-based detection"],
+      "Anomaly detection flags deviations from a baseline rather than known patterns."],
+    ["Which detection method is very accurate for known attacks but misses zero-day attacks?",
+      ["Signature-based detection", "Anomaly-based detection", "Behavioral baselining", "Heuristic learning"],
+      "Signatures only exist for attacks that are already known."]
+  ],
+  "Load balancers and proxies": [
+    ["Which load-balancing method sends each new request to the server with the fewest active sessions?",
+      ["Least connections", "Round-robin", "Sticky sessions", "TLS offload"],
+      "Least connections accounts for some sessions lasting longer than others."],
+    ["What feature keeps a shopper on the same backend server for the whole visit?",
+      ["Session persistence (sticky sessions)", "Health checks", "Round-robin", "Anomaly detection"],
+      "Persistence binds a client to one server, often by cookie."],
+    ["What does a load balancer's health check do?",
+      ["Removes servers that stop responding from the pool", "Encrypts traffic to servers", "Assigns IP addresses to servers", "Blocks malicious URLs"],
+      "Failed servers stop receiving traffic until they recover."],
+    ["Which device sits in front of web servers and receives requests from outside users on their behalf?",
+      ["Reverse proxy", "Forward proxy", "Hub", "Modem"],
+      "A reverse proxy fronts and protects servers; a forward proxy acts for internal clients."]
+  ],
+  "Storage: NAS and SAN": [
+    ["Which storage type provides file-level access over the normal LAN using SMB or NFS?",
+      ["NAS", "SAN", "FCoE", "DAS"],
+      "NAS shares files over the regular network."],
+    ["Which storage type presents block-level storage that servers see as their own disks?",
+      ["SAN", "NAS", "CDN", "Proxy"],
+      "SANs provide block storage over Fibre Channel, iSCSI, or FCoE."],
+    ["What does iSCSI do?",
+      ["Carries SCSI disk commands over TCP/IP", "Shares files using SMB", "Carries Fibre Channel over Ethernet without IP", "Caches web content"],
+      "iSCSI lets a SAN run over ordinary IP networks."]
+  ],
+  "Wireless devices": [
+    ["What does a wireless LAN controller do?",
+      ["Centrally manages lightweight APs: configuration, firmware, RF tuning, and roaming", "Acts as a client's Wi-Fi adapter", "Converts fiber to copper", "Replaces the need for APs"],
+      "Lightweight APs depend on the controller for management."],
+    ["An AP that is configured individually and works without a controller is called:",
+      ["An autonomous (thick) AP", "A lightweight (thin) AP", "A wireless bridge", "A mesh portal"],
+      "Autonomous APs store their own configuration."],
+    ["Which device links two buildings point-to-point over the air?",
+      ["Wireless bridge", "Wireless LAN controller", "Hub", "Load balancer"],
+      "Wireless bridges connect separate sites, usually with directional antennas."]
+  ],
+  "Other appliances to recognize": [
+    ["A small office wants one box that combines firewall, antivirus, content filtering, and VPN. What should it buy?",
+      ["A UTM appliance", "A Layer 2 switch", "A NAS", "A WAN optimizer"],
+      "Unified threat management bundles several security functions."],
+    ["Which appliance terminates large numbers of VPN tunnels from remote users and branches?",
+      ["VPN concentrator", "Wireless bridge", "Modem", "Hub"],
+      "VPN concentrators (headends) handle many encrypted tunnels."],
+    ["What does a content delivery network do?",
+      ["Caches content on servers close to users to reduce latency", "Encrypts all web traffic", "Assigns IP addresses", "Blocks malware at the firewall"],
+      "CDNs serve content from nearby edge locations."]
+  ],
+  "Common mix-ups": [
+    ["A device is described as 'inline and drops malicious traffic'. Is it an IDS or an IPS?",
+      ["IPS", "IDS", "Neither; that's a proxy", "Both behave the same"],
+      "Blocking requires being inline, which is what an IPS does."],
+    ["Which statement about collision and broadcast domains is correct?",
+      ["Switches separate collision domains; routers and VLANs separate broadcast domains", "Routers separate collision domains only", "Hubs separate broadcast domains", "Switches separate broadcast domains by default"],
+      "Each switch port is a collision domain; broadcasts stop at routers and VLAN boundaries."],
+    ["A forward proxy mainly protects ______; a reverse proxy mainly protects ______.",
+      ["clients; servers", "servers; clients", "switches; routers", "routers; switches"],
+      "Forward proxies act for internal users; reverse proxies front servers."],
+    ["Which pairing is correct?",
+      ["NAS = files over the LAN; SAN = blocks over a storage network", "NAS = blocks; SAN = files", "Both use only Fibre Channel", "NAS requires FCoE"],
+      "Remember: NAS = file shares (SMB/NFS); SAN = block storage (FC/iSCSI)."]
+  ],
+  "Key terms": [
+    ["What is a false positive?",
+      ["Legitimate activity wrongly flagged as an attack", "An attack that wasn't detected", "A correctly detected attack", "A backup that failed"],
+      "False positives are a key concern for IPS devices because they block real traffic."],
+    ["What is a VIP in load balancing?",
+      ["The single virtual address clients use to reach a load-balanced service", "A VLAN ID", "A very important packet", "A VPN tunnel endpoint"],
+      "Clients connect to the VIP; the load balancer maps it to pool members."],
+    ["What is a stateful firewall's state table?",
+      ["Its list of active connections", "Its list of MAC addresses", "Its routing table", "Its DHCP lease list"],
+      "The state table lets the firewall recognize and allow return traffic."]
+  ]
+};

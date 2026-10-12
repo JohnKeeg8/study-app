@@ -1,0 +1,80 @@
+module.exports = {
+  "Copper connectors": [
+    ["Which connector is used for telephone lines and DSL?",
+      ["RJ11", "RJ45", "F-type", "LC"],
+      "RJ11 is the smaller phone plug; RJ45 is for Ethernet."],
+    ["Which coax connector screws on and is used for cable TV and cable modems?",
+      ["F-type", "BNC", "RJ45", "SC"],
+      "F-type threads onto RG-6 coax."],
+    ["Which tool pushes wires into a patch panel or keystone jack?",
+      ["Punchdown tool", "Crimper", "OTDR", "Fusion splicer"],
+      "Crimpers attach RJ45 plugs; punchdown tools terminate into IDC blocks."],
+    ["Which coax connector uses a bayonet twist-lock?",
+      ["BNC", "F-type", "RJ11", "MPO"],
+      "BNC locks with a quarter turn."]
+  ],
+  "Fiber connectors": [
+    ["Which fiber connector is small, has a push-pull latching tab, and is most common on SFPs?",
+      ["LC", "SC", "ST", "MPO"],
+      "LC uses a 1.25 mm ferrule and a latching tab."],
+    ["Which fiber connector has a round metal body and a twist-lock bayonet?",
+      ["ST", "SC", "LC", "MPO"],
+      "ST is 'stick and twist', common in older multimode installs."],
+    ["Which connector holds 12 or more fibers in one ferrule for 40/100G parallel optics?",
+      ["MPO/MTP", "LC", "SC", "F-type"],
+      "MPO carries many fibers at once."],
+    ["Why must you never mate a green APC connector with a UPC connector?",
+      ["The angled and flat faces don't meet properly, causing high loss and possible damage", "They use different voltages", "APC is only for copper", "UPC connectors carry PoE"],
+      "APC is polished at 8°; UPC is flat."]
+  ],
+  "Transceivers (form factors)": [
+    ["Which transceiver form factor supports 10 Gbps?",
+      ["SFP+", "SFP", "QSFP28", "GBIC"],
+      "SFP = 1G, SFP+ = 10G, SFP28 = 25G."],
+    ["Which form factor provides 100 Gbps using four 25 Gbps lanes?",
+      ["QSFP28", "QSFP+", "SFP+", "SFP"],
+      "QSFP+ is 4 × 10G = 40G; QSFP28 is 4 × 25G = 100G."],
+    ["Which optic standard runs over single-mode fiber at 1310 nm for about 10 km?",
+      ["10GBASE-LR", "10GBASE-SR", "1000BASE-SX", "10GBASE-T"],
+      "LR = long reach, single-mode."],
+    ["What does 'hot-swappable' mean for an SFP?",
+      ["It can be inserted or removed while the switch is running", "It overheats easily", "It requires a reboot to change", "It only works in hot environments"],
+      "Transceivers can be changed without powering down."]
+  ],
+  "Making links work": [
+    ["A fiber link uses a 10GBASE-SR optic on one end and a 10GBASE-LR optic on the other. What happens?",
+      ["The link fails because of a transceiver mismatch (different fiber type and wavelength)", "It links at 10 Gbps", "It links at 1 Gbps", "It works but with higher latency"],
+      "Both ends must use matching standards."],
+    ["What does a BiDi transceiver allow?",
+      ["Sending and receiving over a single fiber strand using two wavelengths", "Carrying PoE over fiber", "Linking copper to coax", "Doubling the speed of any link"],
+      "BiDi optics are sold as complementary pairs."],
+    ["What does DOM (digital optical monitoring) report?",
+      ["Transmit and receive light levels and temperature", "MAC address tables", "VLAN membership", "DNS records"],
+      "DOM helps diagnose dirty connectors and failing optics."],
+    ["A switch shows 'unsupported transceiver' and keeps the port down. What's the likely cause?",
+      ["A third-party or incompatible module the switch doesn't accept", "A wrong VLAN", "An expired DHCP lease", "A bad DNS server"],
+      "Some vendors only accept approved optics."]
+  ],
+  "Common mix-ups": [
+    ["LC and SC are both push-pull connectors. How do you tell them apart?",
+      ["LC is small; SC is square and larger", "LC twists to lock; SC screws on", "SC is for copper; LC is for fiber", "They're identical"],
+      "LC has half the ferrule size of SC."],
+    ["ST and BNC both twist to lock. What's the difference?",
+      ["ST is a fiber connector; BNC is a coax connector", "ST is for phone lines", "BNC is for fiber", "There's none"],
+      "Same locking style, different media."],
+    ["Which pairing of optics type and fiber is correct?",
+      ["SR → multimode; LR → single-mode", "SR → single-mode; LR → multimode", "Both SR and LR use copper", "Both SR and LR use multimode"],
+      "Short reach = multimode; long reach = single-mode."]
+  ],
+  "Key terms": [
+    ["What is a ferrule in a fiber connector?",
+      ["The precise tube that holds and aligns the fiber", "The plastic latch", "The cable jacket", "A dust cap"],
+      "LC ferrules are 1.25 mm; SC and ST ferrules are 2.5 mm."],
+    ["What does a media converter do?",
+      ["Joins two different media types, such as copper Ethernet to fiber", "Converts AC to DC power", "Translates IPv4 to IPv6", "Converts analog voice to VoIP"],
+      "Media converters extend or adapt links between media."],
+    ["What is a duplex fiber connector?",
+      ["A joined pair of fibers, one for transmit and one for receive", "A connector that carries power", "A single fiber for both directions", "A copper connector"],
+      "Duplex LC is the common pairing on SFPs."]
+  ]
+};
