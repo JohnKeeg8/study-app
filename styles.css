@@ -341,6 +341,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
 .lesson { line-height: 1.6; }
 .lesson h3 { font-size: 1.05rem; margin: 22px 0 8px; color: var(--accent); }
 .lesson h3:first-child { margin-top: 4px; }
+.lesson h4 { font-size: 0.95rem; margin: 16px 0 6px; }
 .lesson p { margin: 0 0 10px; }
 .lesson ul, .lesson ol { margin: 0 0 12px; padding-left: 22px; }
 .lesson li + li { margin-top: 4px; }

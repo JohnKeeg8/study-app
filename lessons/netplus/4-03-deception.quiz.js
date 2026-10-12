@@ -103,7 +103,7 @@ module.exports = {
       "Choose based on how much risk and effort you can accept."]
   ],
   "Key terms": [
-    ["What is lateral movement?",
+    ["In deception terms, what does lateral movement describe?",
       ["An attacker moving from one internal system to another", "A wireless client roaming between APs", "A VLAN changing ports", "A packet crossing a router"],
       "Internal decoys are good at catching it."],
     ["Which term describes a single decoy system that attracts attackers?",

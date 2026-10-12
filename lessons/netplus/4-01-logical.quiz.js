@@ -100,7 +100,7 @@ module.exports = {
     ["Which statement about RADIUS is correct?",
       ["It uses UDP 1812/1813 and encrypts only the password", "It uses TCP 49 and encrypts the whole payload", "It uses TCP 636 for directory queries", "It is a Cisco-only protocol for device admin"],
       "RADIUS is an open standard used mainly for user network access."],
-    ["Which port does LDAPS use?",
+    ["An admin wants directory lookups to Active Directory encrypted with TLS. Which port will LDAPS use?",
       ["TCP 636", "TCP 389", "UDP 1812", "TCP 49"],
       "LDAP is 389; LDAPS is LDAP over TLS on 636."],
     ["In 802.1X, what role does the switch play?",

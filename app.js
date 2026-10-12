@@ -1366,7 +1366,7 @@
   }
   const passedCount = () => allTopics.filter((x) => learnRec(x.tk).passed).length;
 
-  // Minimal Markdown for lessons: ## headings, paragraphs, - / 1. lists (one level of nesting),
+  // Minimal Markdown for lessons: ## and ### headings, paragraphs, - / 1. lists (one level of nesting),
   // | tables |, > callouts, **bold**, *italic*, `code`. Text is escaped before formatting.
   function inlineMd(text) {
     return esc(text).split("`").map((part, i) => (i % 2
@@ -1383,6 +1383,7 @@
       if (/^# /.test(line)) continue; // the title is shown separately
       if (!line.trim()) { flush(); continue; }
       if (/^## /.test(line)) { flush(); out.push(`<h3>${inlineMd(line.slice(3))}</h3>`); continue; }
+      if (/^### /.test(line)) { flush(); out.push(`<h4>${inlineMd(line.slice(4))}</h4>`); continue; }
       if (/^> /.test(line)) { flush(); out.push(`<div class="callout">${inlineMd(line.slice(2))}</div>`); continue; }
       if (/^\|/.test(line)) {
         flush();
