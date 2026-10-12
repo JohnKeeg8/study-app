@@ -138,3 +138,17 @@ for (const subjectId of fs.readdirSync(srcRoot)) {
     console.log(`Wrote data/${subjectId}-lessons.js`);
   }
 }
+
+// Stamp index.html's script and stylesheet links with a hash of each file (app.js?v=1a2b3c), so a phone that
+// cached an old copy has to download the new one after an update.
+if (!failed) {
+  const crypto = require("crypto");
+  const indexPath = path.join(root, "index.html");
+  const html = fs.readFileSync(indexPath, "utf8");
+  const stamped = html.replace(/(<(?:script|link)\b[^>]*?\b(?:src|href)=")([^"?:]+\.(?:js|css))(?:\?v=[^"]*)?"/g, (m, pre, file) => {
+    const p = path.join(root, file);
+    if (!fs.existsSync(p)) return m;
+    return `${pre}${file}?v=${crypto.createHash("sha1").update(fs.readFileSync(p)).digest("hex").slice(0, 8)}"`;
+  });
+  if (stamped !== html) { fs.writeFileSync(indexPath, stamped); console.log("Updated version stamps in index.html"); }
+}

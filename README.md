@@ -80,7 +80,9 @@ node tools/build.js
 
 The build validates every question (topic exists, 3–5 unique choices, explanation present, no duplicate questions, no "all of the above"). It prints counts per objective and writes `data/netplus.js`. Don't edit `data/netplus.js` by hand.
 
-Then bump `CACHE` in `sw.js` (e.g. `study-app-v3`) so installed phones pick up the update.
+The build also stamps the script and stylesheet links in `index.html` with a hash of each file (`app.js?v=…`), so phones can't keep running an old cached copy. Bump `CACHE` in `sw.js` too (e.g. `study-app-v12`) so the offline copy refreshes.
+
+When hosting it yourself, have the web server send `Cache-Control: no-cache` for every file (with Caddy, add `header Cache-Control "no-cache"` to the site block) so browsers check for a newer version each time the app opens.
 
 Notes:
 - Saved progress is keyed by question text, so rewording a question resets its progress (only for that question).
