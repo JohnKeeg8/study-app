@@ -1352,6 +1352,7 @@
 
   // ---------- Learn: lessons per objective + section-by-section mini tests ----------
   const LESSONS = (window.LESSONS || {})[subject.id] || {};
+  const LESSON_VIDEOS = (window.LESSON_VIDEOS || {})[subject.id] || {};
   const PER_SECTION = 2; // mini test questions drawn from each lesson section
   const FALLBACK_SIZE = 10; // for a lesson without section quizzes
   const passMark = (n) => Math.ceil(n * 0.8); // 80% to pass
@@ -1511,6 +1512,10 @@
         <div class="title"><div class="code">${d}.0 ${esc(domainName(d))}</div><h1>${esc(t)}</h1></div>
       </div>
       ${r.passed ? `<div class="card pass-banner">✓ <strong>Passed</strong> · best ${bestText(r)}${r.passedAt ? ` · ${new Date(r.passedAt + "T12:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : ""}</div>` : ""}
+      ${(LESSON_VIDEOS[tk] || []).length ? `<div class="card stack videos">
+        <div class="row"><strong>🎬 Watch: Professor Messer</strong><span class="spacer"></span><span class="small muted">free videos</span></div>
+        ${LESSON_VIDEOS[tk].map((v) => `<a class="video-link" href="${esc(v.url)}" target="_blank" rel="noopener noreferrer">▶ ${esc(v.title)} <span class="muted">↗</span></a>`).join("")}
+      </div>` : ""}
       <article class="card lesson">${renderMd(LESSONS[tk] || "*No lesson yet.*")}</article>
       <div class="card stack test-cta">
         <div>
