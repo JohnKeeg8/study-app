@@ -100,13 +100,234 @@
     });
   }
   function save() {
+    store.savedAt = Date.now();
     try {
       const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
       all[subject.id] = store;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
     } catch (e) { /* storage unavailable (private mode); progress just won't persist */ }
+    markChanged();
   }
   let store = load();
+
+  // ---------- Sync with the server ----------
+  // Progress is saved on this device first (so the app works offline), then copied to the server's sync service
+  // (server/sync.py, reached at api/state). Every device that opens the app picks up the server's copy. The
+  // server counts revisions: if another device saved since this one last synced, the two copies are merged
+  // (keeping the most progress from each) before saving. Without a sync service the app just stays on-device.
+  const SYNC_KEY = "studyapp.sync"; // { rev: server revision this device last matched, dirty: unsynced changes, at: last sync time }
+  const API_STATE = "api/state";
+  const sync = { available: null, busy: false, again: false, timer: null, changes: 0, error: "" };
+  function syncMeta() {
+    try { const m = JSON.parse(localStorage.getItem(SYNC_KEY) || "null"); if (m) return m; } catch (e) { /* ignore */ }
+    return { rev: 0, dirty: true, at: 0 }; // never synced: whatever is on this device still needs uploading
+  }
+  function setSyncMeta(m) { try { localStorage.setItem(SYNC_KEY, JSON.stringify(m)); } catch (e) { /* ignore */ } }
+  function localAll() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") || {}; } catch (e) { return {}; } }
+  // The counters (XP, questions per day) as of the last sync, so a merge can add what each device earned since.
+  const baseOf = (all) => Object.fromEntries(Object.entries(all || {}).map(([k, x]) => [k, { xp: (x && x.xp) || 0, daily: (x && x.daily) || {} }]));
+  const hasProgress = (all) => Object.values(all || {}).some((x) => x && (x.xp > 0 || Object.keys(x.stats || {}).length || Object.keys(x.learn || {}).length || Object.keys(x.srs || {}).length));
+
+  function markChanged() {
+    sync.changes++;
+    const m = syncMeta();
+    if (!m.dirty) setSyncMeta(Object.assign(m, { dirty: true })); // keeps m.base
+    clearTimeout(sync.timer);
+    if (sync.available !== false) sync.timer = setTimeout(syncNow, 1500);
+  }
+
+  // Merge two saves of one subject, keeping the most progress from each. Counters keep whichever record has
+  // more attempts; settings and the open session come from the copy saved most recently.
+  // `base` (optional) is this subject's counters at the last sync: then XP and daily counts become
+  // server + what `b` (this device) added since, instead of the larger of the two.
+  function mergeSubject(a, b, base) {
+    const newer = (b.savedAt || 0) > (a.savedAt || 0) ? b : a;
+    const out = JSON.parse(JSON.stringify(newer));
+    const tries = (r) => (r ? (r.c || 0) + (r.w || 0) : -1);
+    const keys = (x, y) => [...new Set(Object.keys(x || {}).concat(Object.keys(y || {})))];
+    const byTries = (x = {}, y = {}) => Object.fromEntries(keys(x, y).map((k) => [k, tries(y[k]) > tries(x[k]) ? y[k] : x[k]]));
+    out.stats = byTries(a.stats, b.stats);
+    out.topics = byTries(a.topics, b.topics);
+    out.flagged = Object.assign({}, a.flagged, b.flagged);
+    out.daily = Object.fromEntries(keys(a.daily, b.daily).map((k) => {
+      const x = (a.daily || {})[k], y = (b.daily || {})[k];
+      if (!x || !y) return [k, x || y];
+      if (base) {
+        const was = base.daily[k] || {};
+        const add = (f) => (x[f] || 0) + Math.max(0, (y[f] || 0) - (was[f] || 0));
+        return [k, { n: add("n"), c: add("c"), xp: add("xp"), met: !!(x.met || y.met) }];
+      }
+      const pick = (y.n || 0) > (x.n || 0) ? y : x;
+      return [k, Object.assign({}, pick, { met: !!(x.met || y.met) })];
+    }));
+    out.xp = base ? (a.xp || 0) + Math.max(0, (b.xp || 0) - base.xp) : Math.max(a.xp || 0, b.xp || 0);
+    out.bestStreak = Math.max(a.bestStreak || 0, b.bestStreak || 0);
+    ["subnet", "ports", "classes"].forEach((d) => {
+      if (!a[d] || !b[d]) return;
+      out[d].types = byTries(a[d].types, b[d].types);
+      if (a[d].cards || b[d].cards) out[d].cards = byTries(a[d].cards, b[d].cards);
+    });
+    out.learn = Object.fromEntries(keys(a.learn, b.learn).map((k) => {
+      const x = (a.learn || {})[k], y = (b.learn || {})[k];
+      if (!x || !y) return [k, x || y];
+      const ratio = (r) => (r.best || 0) / (r.of || 10);
+      const best = ratio(y) > ratio(x) ? y : x;
+      const latest = (y.attempts || 0) > (x.attempts || 0) ? y : x;
+      return [k, {
+        read: !!(x.read || y.read), best: best.best || 0, of: best.of, last: latest.last,
+        passed: !!(x.passed || y.passed), passedAt: [x.passedAt, y.passedAt].filter(Boolean).sort()[0],
+        attempts: Math.max(x.attempts || 0, y.attempts || 0)
+      }];
+    }));
+    // A question's review schedule goes with whichever answer record was kept; otherwise the later review wins.
+    out.srs = Object.fromEntries(keys(a.srs, b.srs).map((k) => {
+      const x = (a.srs || {})[k], y = (b.srs || {})[k];
+      if (!x || !y) return [k, x || y];
+      if ((a.stats || {})[k] || (b.stats || {})[k]) return [k, out.stats[k] === (b.stats || {})[k] ? y : x];
+      return [k, (y.due || "") > (x.due || "") ? y : x];
+    }));
+    const seen = new Set();
+    out.history = (a.history || []).concat(b.history || [])
+      .filter((h) => { const id = [h.at, h.mode, h.score, h.total].join("|"); return !seen.has(id) && seen.add(id); })
+      .sort((x, y) => x.at - y.at).slice(-50);
+    out.savedAt = Math.max(a.savedAt || 0, b.savedAt || 0);
+    return out;
+  }
+  function mergeAll(server, local) {
+    const base = syncMeta().base || {};
+    const out = Object.assign({}, server, local);
+    Object.keys(server || {}).forEach((k) => { if (local && local[k] && server[k]) out[k] = mergeSubject(server[k], local[k], base[k]); });
+    return out;
+  }
+
+  // Replace this device's saved progress with `all` and redraw if it changed. A quiz in progress on this device is kept.
+  function adopt(all, rev, dirty, serverData) {
+    const before = localStorage.getItem(STORAGE_KEY) || "{}";
+    if (screen === "session" && store.session && all[subject.id]) all[subject.id].session = store.session;
+    const after = JSON.stringify(all);
+    try { localStorage.setItem(STORAGE_KEY, after); } catch (e) { /* ignore */ }
+    setSyncMeta({ rev, dirty: !!dirty, at: Date.now(), base: baseOf(serverData || all) });
+    if (after !== before) { store = load(); render(); }
+  }
+
+  async function putState(all, baseRev, backup) {
+    const res = await fetch(API_STATE, {
+      method: "PUT", cache: "no-store", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ baseRev, data: all, backup: !!backup })
+    });
+    if (res.status === 409) return { conflict: await res.json() };
+    if (!res.ok) throw new Error("server said " + res.status);
+    return res.json();
+  }
+
+  // Upload this device's progress. If another device saved meanwhile, merge with its copy and try again.
+  async function pushLocal(baseRev, backup) {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const changes = sync.changes;
+      const all = localAll();
+      const r = await putState(all, baseRev, backup);
+      if (r.conflict) {
+        const srv = r.conflict;
+        if (srv.data) adopt(mergeAll(srv.data, localAll()), srv.rev, true, srv.data);
+        baseRev = srv.rev;
+        continue;
+      }
+      // Still dirty if something was saved while the upload was in flight.
+      setSyncMeta({ rev: r.rev, dirty: sync.changes !== changes, at: Date.now(), base: baseOf(all) });
+      return;
+    }
+    throw new Error("too many conflicts");
+  }
+
+  async function syncNow() {
+    if (sync.busy) { sync.again = true; return; }
+    sync.busy = true;
+    clearTimeout(sync.timer);
+    const wasAvailable = sync.available;
+    try {
+      const res = await fetch(API_STATE, { cache: "no-store" });
+      if (!res.ok || !/json/.test(res.headers.get("content-type") || "")) throw Object.assign(new Error("no sync service"), { missing: true });
+      const srv = await res.json();
+      sync.available = true;
+      const meta = syncMeta();
+      const local = localAll();
+      if (!srv.data) {
+        // Empty server (first time): upload what this device has. This is how existing progress moves over.
+        if (hasProgress(local)) await pushLocal(srv.rev, true); else setSyncMeta(Object.assign(syncMeta(), { rev: srv.rev, dirty: true }));
+      } else if (srv.rev === meta.rev) {
+        if (meta.dirty) await pushLocal(srv.rev);
+      } else if (!meta.dirty || !hasProgress(local)) {
+        adopt(srv.data, srv.rev, false);
+      } else {
+        adopt(mergeAll(srv.data, local), srv.rev, true, srv.data);
+        await pushLocal(srv.rev);
+      }
+      sync.error = "";
+    } catch (e) {
+      if (e.missing && sync.available !== true) sync.available = false;
+      sync.error = e.missing ? "" : String(e.message || e);
+    } finally {
+      sync.busy = false;
+      if (sync.available !== wasAvailable && screen === "home") render(); else updateSyncStatus();
+      if (sync.again) { sync.again = false; syncNow(); }
+    }
+  }
+
+  function syncStatusText() {
+    const m = syncMeta();
+    if (sync.available === false) return "Saved on this device only (no sync service on this server).";
+    if (sync.available === null) return "Connecting to the server…";
+    if (sync.error) return "Saved on this device. Couldn't reach the server, will retry. (" + sync.error + ")";
+    if (m.dirty) return "Saved on this device, syncing…";
+    return "Synced with the server" + (m.at ? " · " + new Date(m.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "") + ".";
+  }
+  function updateSyncStatus() {
+    const el = document.getElementById("sync-status");
+    if (el) el.textContent = syncStatusText();
+  }
+
+  // ---------- Backup file (download / restore) ----------
+  function downloadBackup() {
+    const blob = new Blob([JSON.stringify({ app: "study-app", version: 1, exportedAt: new Date().toISOString(), data: localAll() }, null, 1)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "study-app-backup-" + dayKey() + ".json";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+  async function restoreBackup(file) {
+    let data;
+    try {
+      const parsed = JSON.parse(await file.text());
+      data = parsed && parsed.app === "study-app" ? parsed.data : parsed;
+      if (!data || typeof data !== "object" || !Object.values(data).some((x) => x && typeof x === "object" && "stats" in x)) throw new Error();
+    } catch (e) {
+      alert("That file isn't a Study App backup.");
+      return;
+    }
+    const subj = data[subject.id] || {};
+    if (!confirm(`Replace the progress on this device${sync.available ? " and the server" : ""} with this backup?\n\n${Object.keys(subj.stats || {}).length} questions answered · ${subj.xp || 0} XP${sync.available ? "\n\nThe server keeps a copy of the current progress first." : ""}`)) return;
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) { /* ignore */ }
+    while (sync.busy) await new Promise((r) => setTimeout(r, 100));
+    sync.busy = true; // keep the background sync from merging the old progress back in
+    store = load();
+    store.session = null;
+    save();
+    clearTimeout(sync.timer);
+    render();
+    if (sync.available) {
+      try {
+        const res = await fetch(API_STATE, { cache: "no-store" });
+        const srv = await res.json();
+        await pushLocal(srv.rev, true); // replaces the server copy (after a backup) rather than merging with it
+        sync.error = "";
+      } catch (e) { sync.error = String(e.message || e); }
+    }
+    sync.busy = false;
+    updateSyncStatus();
+    alert("Backup restored.");
+  }
 
   // ---------- Theme (dark by default) ----------
   function getTheme() {
@@ -875,6 +1096,17 @@
           <button class="switch ${getTheme() === "dark" ? "on" : ""}" data-action="theme" role="switch" aria-checked="${getTheme() === "dark"}" aria-label="Dark mode"><span></span></button>
         </div>
         <div class="row small muted"><span>Best streak: ${plural(Math.max(store.bestStreak, st), "day")}</span><span class="spacer"></span><button class="link-btn small" data-action="reset">Reset progress</button></div>
+      </div>
+
+      <div class="section-title">Your data</div>
+      <div class="card stack">
+        <div class="row"><span class="small" id="sync-status">${esc(syncStatusText())}</span><span class="spacer"></span>${sync.available !== false ? `<button class="link-btn small" data-action="sync-now">Sync now</button>` : ""}</div>
+        <div class="btn-row">
+          <button class="btn secondary" data-action="backup-download">Download backup</button>
+          <button class="btn secondary" data-action="backup-restore">Restore backup</button>
+        </div>
+        <input type="file" id="restore-file" accept="application/json,.json" hidden>
+        <p class="small muted">A backup file holds all your progress, streaks and lesson badges. Keep one before big changes, or use it to move to another device.</p>
       </div>`;
   }
 
@@ -1736,6 +1968,13 @@
         applyTheme(theme);
         return render();
       }
+      case "sync-now":
+        syncNow();
+        return;
+      case "backup-download":
+        return downloadBackup();
+      case "backup-restore":
+        return document.getElementById("restore-file").click();
       case "reset":
         if (confirm("Reset all progress, streaks, XP, flags, and history for " + subject.name + "?")) {
           store = defaults();
@@ -1756,6 +1995,12 @@
   });
 
   app.addEventListener("change", (e) => {
+    if (e.target.id === "restore-file") {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = "";
+      if (file) restoreBackup(file);
+      return;
+    }
     const set = store.settings;
     const { domain, topic } = e.target.dataset;
     if (domain) {
@@ -1815,10 +2060,15 @@
 
   // Refresh the home screen when the app comes back to the foreground (e.g. the next day).
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && screen === "home") render();
+    if (document.visibilityState === "visible") {
+      if (screen === "home") render();
+      syncNow(); // pick up progress made on another device
+    }
   });
+  window.addEventListener("online", () => syncNow());
 
   render();
+  if (location.protocol !== "file:") syncNow();
 
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
     // When an updated service worker takes over, reload once so the new version shows right away.
