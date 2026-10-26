@@ -48,7 +48,7 @@
       stats: {},   // qid -> { c: correct count, w: wrong count, last: 1|0 }
       topics: {},  // topicKey -> { c, w, r: recent results as a "1"/"0" string, newest last }
       flagged: {}, // qid -> true
-      daily: {},   // "YYYY-MM-DD" -> { n: answered, c: correct, xp, met: hit the goal that day }
+      daily: {},   // "YYYY-MM-DD" -> { n: answered, c: correct (counts toward the goal), xp, met: hit the goal that day }
       xp: 0,
       bestStreak: 0,
       // Drill sections. picked: the user chose the answer style themselves; types/cards: { c, w, r } records.
@@ -426,7 +426,8 @@
     return { ok, justMet: recordDay(ok, xp) };
   }
 
-  // Count an answer toward today's goal and XP. Returns true when this answer completes the daily goal.
+  // Record an answer for today and add its XP. Only correct answers count toward the daily goal (day.c);
+  // day.n counts every answer. Returns true when this answer completes the daily goal.
   function recordDay(ok, xp) {
     const key = dayKey();
     const day = store.daily[key] || (store.daily[key] = { n: 0, c: 0, xp: 0, met: false });
@@ -434,7 +435,7 @@
     if (ok) day.c++;
     day.xp += xp;
     store.xp += xp;
-    if (day.met || day.n < store.settings.goal) return false;
+    if (day.met || day.c < store.settings.goal) return false;
     day.met = true;
     store.bestStreak = Math.max(store.bestStreak, streak());
     return true;
@@ -904,7 +905,10 @@
       x.chosen == null ? "I didn't answer this one." : wrong ? "I answered: " + x.chosen : "I got it right, but I want to understand it better.",
       "My study app's explanation: " + x.explanation,
       "",
-      "Please explain why the correct answer is right" + (wrong ? ", where my answer went wrong" : "") +
+      "Please answer in two parts:",
+      "1. **Short answer:** start with 2–3 sentences that explain why the correct answer is right" +
+        (wrong ? " and why mine was wrong" : "") + ". This should be enough on its own if I just need a quick refresher.",
+      "2. **In depth:** then go deeper: explain the concept" + (wrong ? ", where my reasoning went wrong" : "") +
         (x.choices ? ", briefly why each other choice is wrong," : ", walk through the method step by step,") +
         " and give me a tip to remember this for the exam."
     ].join("\n");
@@ -952,7 +956,7 @@
 
     const goalText = t.met
       ? `Done for today. Come back tomorrow to make it ${plural(st + 1, "day")}.`
-      : `${plural(set.goal - t.n, "more question")} to ${st ? `keep your ${st}-day streak` : "start a streak"}.`;
+      : `${plural(Math.max(0, set.goal - t.c), "more correct answer")} to ${st ? `keep your ${st}-day streak` : "start a streak"}.`;
 
     const weakHtml = weak.length
       ? weak.map((x) => `
@@ -1023,7 +1027,7 @@
       </div>` : ""}
 
       <div class="card goal-card">
-        <div class="ring-wrap">${goalRing(t.n, set.goal, 84)}<div class="ring-label"><strong>${Math.min(t.n, set.goal)}</strong><small>/${set.goal}</small></div></div>
+        <div class="ring-wrap">${goalRing(t.c, set.goal, 84)}<div class="ring-label"><strong>${Math.min(t.c, set.goal)}</strong><small>/${set.goal}</small></div></div>
         <div class="goal-info">
           <h2>${t.met ? "Daily goal complete! 🎉" : "Daily goal"}</h2>
           <div class="small muted">${goalText}</div>
@@ -1086,7 +1090,7 @@
       <div class="section-title">Settings</div>
       <div class="card stack">
         <div>
-          <div class="small muted" style="margin-bottom:6px">Daily goal (questions)</div>
+          <div class="small muted" style="margin-bottom:6px">Daily goal (correct answers)</div>
           <div class="segmented">
             ${GOALS.map((n) => `<button data-goal="${n}" class="${set.goal === n ? "on" : ""}">${n}</button>`).join("")}
           </div>
@@ -1177,8 +1181,8 @@
       top = `
         <div class="quiz-top">
           <button class="icon-btn" data-action="quit" aria-label="End practice">✕</button>
-          <div class="progress daily ${t.met ? "met" : ""}" title="Today's goal"><span style="width:${Math.min(100, pct(t.n, goal))}%"></span></div>
-          <span class="count small">${t.met ? "🔥" : `${t.n}/${goal}`}</span>
+          <div class="progress daily ${t.met ? "met" : ""}" title="Today's goal"><span style="width:${Math.min(100, pct(t.c, goal))}%"></span></div>
+          <span class="count small">${t.met ? "🔥" : `${t.c}/${goal}`}</span>
           ${s.combo >= 2 ? `<span class="combo">⚡${s.combo}</span>` : ""}
           <button class="icon-btn ${store.flagged[qid] ? "active" : ""}" data-action="flag" aria-label="Flag question">${store.flagged[qid] ? "★" : "☆"}</button>
         </div>`;
@@ -1285,7 +1289,7 @@
           <div><div class="num">+${s.xp}</div><div class="lbl">XP</div></div>
           <div><div class="num">${s.bestCombo}</div><div class="lbl">Best combo</div></div>
         </div>
-        <div class="small muted">${today().met ? `🔥 Daily goal complete · ${streak()}-day streak` : `${store.settings.goal - today().n} more today to hit your goal`}</div>
+        <div class="small muted">${today().met ? `🔥 Daily goal complete · ${streak()}-day streak` : `${Math.max(0, store.settings.goal - today().c)} more correct today to hit your goal`}</div>
       </div>`;
 
     return `
@@ -1525,8 +1529,8 @@
     return `
       <div class="quiz-top">
         <button class="icon-btn" data-action="quit" aria-label="End ${esc(d.title)} practice">✕</button>
-        <div class="progress daily ${t.met ? "met" : ""}" title="Today's goal"><span style="width:${Math.min(100, pct(t.n, goal))}%"></span></div>
-        <span class="count small">${t.met ? "🔥" : `${t.n}/${goal}`}</span>
+        <div class="progress daily ${t.met ? "met" : ""}" title="Today's goal"><span style="width:${Math.min(100, pct(t.c, goal))}%"></span></div>
+        <span class="count small">${t.met ? "🔥" : `${t.c}/${goal}`}</span>
         ${s.combo >= 2 ? `<span class="combo">⚡${s.combo}</span>` : ""}
       </div>
       <span class="chip">${esc(d.title)} · ${esc(item.name)}</span>
@@ -1571,7 +1575,7 @@
           <div><div class="num">+${s.xp}</div><div class="lbl">XP</div></div>
           <div><div class="num">${s.bestCombo}</div><div class="lbl">Best combo</div></div>
         </div>
-        <div class="small muted">${today().met ? `🔥 Daily goal complete · ${streak()}-day streak` : `${store.settings.goal - today().n} more today to hit your goal`}</div>
+        <div class="small muted">${today().met ? `🔥 Daily goal complete · ${streak()}-day streak` : `${Math.max(0, store.settings.goal - today().c)} more correct today to hit your goal`}</div>
       </div>
       <div class="section-title">By question type</div>
       <div class="card">${byType}</div>
