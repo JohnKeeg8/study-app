@@ -88,6 +88,33 @@ def make_handler(store, static_dir):
             self.end_headers()
             self.wfile.write(body)
 
+        def read_body(self):
+            """Request body, with or without Content-Length (a proxy may forward it chunked). None if too big."""
+            if "chunked" in (self.headers.get("Transfer-Encoding") or "").lower():
+                chunks, total = [], 0
+                while True:
+                    line = self.rfile.readline(1024)
+                    try:
+                        size = int(line.split(b";")[0].strip() or b"0", 16)
+                    except ValueError:
+                        return None
+                    if size == 0:
+                        while self.rfile.readline(1024) not in (b"\r\n", b"\n", b""):
+                            pass  # trailers
+                        return b"".join(chunks)
+                    total += size
+                    if total > MAX_BODY:
+                        return None
+                    chunks.append(self.rfile.read(size))
+                    self.rfile.readline(1024)  # CRLF after each chunk
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                return None
+            if length < 0 or length > MAX_BODY:
+                return None
+            return self.rfile.read(length)
+
         def api_path(self):
             path = self.path.split("?", 1)[0]
             i = path.find("/api/")
@@ -115,14 +142,11 @@ def make_handler(store, static_dir):
         def do_PUT(self):
             if self.api_path() != "/api/state":
                 return self.send_json(404, {"error": "not found"})
+            raw = self.read_body()
+            if raw is None:
+                return self.send_json(413, {"error": "too large or unreadable"})
             try:
-                length = int(self.headers.get("Content-Length") or 0)
-            except ValueError:
-                length = -1
-            if length <= 0 or length > MAX_BODY:
-                return self.send_json(413 if length > MAX_BODY else 400, {"error": "bad length"})
-            try:
-                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                body = json.loads(raw.decode("utf-8"))
                 base = int(body.get("baseRev", -1))
                 data = body["data"]
                 if not isinstance(data, dict):

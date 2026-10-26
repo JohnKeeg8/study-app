@@ -124,19 +124,23 @@
   }
   function setSyncMeta(m) { try { localStorage.setItem(SYNC_KEY, JSON.stringify(m)); } catch (e) { /* ignore */ } }
   function localAll() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") || {}; } catch (e) { return {}; } }
+  // The counters (XP, questions per day) as of the last sync, so a merge can add what each device earned since.
+  const baseOf = (all) => Object.fromEntries(Object.entries(all || {}).map(([k, x]) => [k, { xp: (x && x.xp) || 0, daily: (x && x.daily) || {} }]));
   const hasProgress = (all) => Object.values(all || {}).some((x) => x && (x.xp > 0 || Object.keys(x.stats || {}).length || Object.keys(x.learn || {}).length || Object.keys(x.srs || {}).length));
 
   function markChanged() {
     sync.changes++;
     const m = syncMeta();
-    if (!m.dirty) setSyncMeta(Object.assign(m, { dirty: true }));
+    if (!m.dirty) setSyncMeta(Object.assign(m, { dirty: true })); // keeps m.base
     clearTimeout(sync.timer);
     if (sync.available !== false) sync.timer = setTimeout(syncNow, 1500);
   }
 
   // Merge two saves of one subject, keeping the most progress from each. Counters keep whichever record has
   // more attempts; settings and the open session come from the copy saved most recently.
-  function mergeSubject(a, b) {
+  // `base` (optional) is this subject's counters at the last sync: then XP and daily counts become
+  // server + what `b` (this device) added since, instead of the larger of the two.
+  function mergeSubject(a, b, base) {
     const newer = (b.savedAt || 0) > (a.savedAt || 0) ? b : a;
     const out = JSON.parse(JSON.stringify(newer));
     const tries = (r) => (r ? (r.c || 0) + (r.w || 0) : -1);
@@ -148,10 +152,15 @@
     out.daily = Object.fromEntries(keys(a.daily, b.daily).map((k) => {
       const x = (a.daily || {})[k], y = (b.daily || {})[k];
       if (!x || !y) return [k, x || y];
+      if (base) {
+        const was = base.daily[k] || {};
+        const add = (f) => (x[f] || 0) + Math.max(0, (y[f] || 0) - (was[f] || 0));
+        return [k, { n: add("n"), c: add("c"), xp: add("xp"), met: !!(x.met || y.met) }];
+      }
       const pick = (y.n || 0) > (x.n || 0) ? y : x;
       return [k, Object.assign({}, pick, { met: !!(x.met || y.met) })];
     }));
-    out.xp = Math.max(a.xp || 0, b.xp || 0);
+    out.xp = base ? (a.xp || 0) + Math.max(0, (b.xp || 0) - base.xp) : Math.max(a.xp || 0, b.xp || 0);
     out.bestStreak = Math.max(a.bestStreak || 0, b.bestStreak || 0);
     ["subnet", "ports", "classes"].forEach((d) => {
       if (!a[d] || !b[d]) return;
@@ -185,18 +194,19 @@
     return out;
   }
   function mergeAll(server, local) {
+    const base = syncMeta().base || {};
     const out = Object.assign({}, server, local);
-    Object.keys(server || {}).forEach((k) => { if (local && local[k] && server[k]) out[k] = mergeSubject(server[k], local[k]); });
+    Object.keys(server || {}).forEach((k) => { if (local && local[k] && server[k]) out[k] = mergeSubject(server[k], local[k], base[k]); });
     return out;
   }
 
   // Replace this device's saved progress with `all` and redraw if it changed. A quiz in progress on this device is kept.
-  function adopt(all, rev, dirty) {
+  function adopt(all, rev, dirty, serverData) {
     const before = localStorage.getItem(STORAGE_KEY) || "{}";
     if (screen === "session" && store.session && all[subject.id]) all[subject.id].session = store.session;
     const after = JSON.stringify(all);
     try { localStorage.setItem(STORAGE_KEY, after); } catch (e) { /* ignore */ }
-    setSyncMeta({ rev, dirty: !!dirty, at: Date.now() });
+    setSyncMeta({ rev, dirty: !!dirty, at: Date.now(), base: baseOf(serverData || all) });
     if (after !== before) { store = load(); render(); }
   }
 
@@ -218,12 +228,12 @@
       const r = await putState(all, baseRev, backup);
       if (r.conflict) {
         const srv = r.conflict;
-        if (srv.data) adopt(mergeAll(srv.data, localAll()), srv.rev, true);
+        if (srv.data) adopt(mergeAll(srv.data, localAll()), srv.rev, true, srv.data);
         baseRev = srv.rev;
         continue;
       }
       // Still dirty if something was saved while the upload was in flight.
-      setSyncMeta({ rev: r.rev, dirty: sync.changes !== changes, at: Date.now() });
+      setSyncMeta({ rev: r.rev, dirty: sync.changes !== changes, at: Date.now(), base: baseOf(all) });
       return;
     }
     throw new Error("too many conflicts");
@@ -233,6 +243,7 @@
     if (sync.busy) { sync.again = true; return; }
     sync.busy = true;
     clearTimeout(sync.timer);
+    const wasAvailable = sync.available;
     try {
       const res = await fetch(API_STATE, { cache: "no-store" });
       if (!res.ok || !/json/.test(res.headers.get("content-type") || "")) throw Object.assign(new Error("no sync service"), { missing: true });
@@ -242,13 +253,13 @@
       const local = localAll();
       if (!srv.data) {
         // Empty server (first time): upload what this device has. This is how existing progress moves over.
-        if (hasProgress(local)) await pushLocal(srv.rev, true); else setSyncMeta({ rev: srv.rev, dirty: true, at: 0 });
+        if (hasProgress(local)) await pushLocal(srv.rev, true); else setSyncMeta(Object.assign(syncMeta(), { rev: srv.rev, dirty: true }));
       } else if (srv.rev === meta.rev) {
         if (meta.dirty) await pushLocal(srv.rev);
       } else if (!meta.dirty || !hasProgress(local)) {
         adopt(srv.data, srv.rev, false);
       } else {
-        adopt(mergeAll(srv.data, local), srv.rev, true);
+        adopt(mergeAll(srv.data, local), srv.rev, true, srv.data);
         await pushLocal(srv.rev);
       }
       sync.error = "";
@@ -257,7 +268,7 @@
       sync.error = e.missing ? "" : String(e.message || e);
     } finally {
       sync.busy = false;
-      updateSyncStatus();
+      if (sync.available !== wasAvailable && screen === "home") render(); else updateSyncStatus();
       if (sync.again) { sync.again = false; syncNow(); }
     }
   }
