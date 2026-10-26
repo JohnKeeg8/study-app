@@ -1,5 +1,5 @@
 // Bump CACHE whenever app files or questions change so phones pick up the update.
-const CACHE = "study-app-v12";
+const CACHE = "study-app-v13";
 const ASSETS = [
   "./",
   "index.html",
@@ -32,6 +32,7 @@ self.addEventListener("activate", (e) => {
 // Network first so updates show up when online; fall back to cache when offline.
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
+  if (new URL(e.request.url).pathname.includes("/api/")) return; // sync requests always go straight to the server
   e.respondWith(
     // "no-cache" makes the browser check with the server instead of reusing a stale HTTP-cached copy.
     // (A navigation request can't be copied with options, so page loads are re-requested by URL.)

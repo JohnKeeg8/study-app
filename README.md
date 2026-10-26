@@ -21,7 +21,7 @@ It's a Progressive Web App (plain HTML/CSS/JS; nothing to install to run it). On
 - **Domain and objective filters**, **Missed / Flagged review**, resumable sessions.
 - Dark mode by default (switch to light in Settings), works offline, answer choices shuffled on every attempt.
 
-All progress is stored on the device in your browser and isn't synced between devices.
+- **Progress saved on your server**: when the app is hosted with the included sync service, progress is kept on the server and shared by every device that opens the app. The app still saves on the device first, so it works offline and catches up when it's back on your network. If two devices make progress while apart, it merges them, keeping the most from each. **Settings → Your data** shows the sync status and lets you download a backup file or restore one.
 
 ## Put it on your phone
 
@@ -31,14 +31,31 @@ All progress is stored on the device in your browser and isn't synced between de
    - **Android (Chrome):** ⋮ menu → **Add to Home screen** / **Install app**.
 3. Launch it from the home-screen icon. It opens full-screen like a normal app.
 
-Progress is stored in the browser on that device (localStorage). It is not synced between devices.
+Without the sync service (e.g. on GitHub Pages), progress stays in the browser on that device. Use **Settings → Your data → Download backup** to move it.
+
+## Self-hosting with server-side progress (Linux + Caddy)
+
+`server/sync.py` is a small sync service that uses only Python's standard library. It listens on 127.0.0.1:8787, and Caddy forwards `/api/*` to it. With the app in `/var/www/study-app` and Caddy serving it, run as root:
+
+```sh
+cd /var/www/study-app && git pull
+bash server/install.sh
+```
+
+The script installs Python if it's missing, starts the `study-app-sync` systemd service, and adds `reverse_proxy /api/* 127.0.0.1:8787` to `/etc/caddy/Caddyfile`. It keeps a backup of the old Caddyfile next to it. It's safe to run again.
+
+- **First launch:** the device you've been using uploads its progress to the server automatically. Other devices pick it up when they open the app.
+- **Where the data lives:** `/var/lib/study-app/state.json`. A copy goes to `/var/lib/study-app/backups/` at most hourly, plus one before every restore; the newest 72 are kept. To roll back, stop the service, copy a backup over `state.json`, and start the service again.
+- **Status:** `systemctl status study-app-sync`.
 
 ## Run locally
 
 ```sh
-python3 -m http.server 8000
-# then open http://localhost:8000
+python3 server/sync.py --port 8000 --data ./.sync-data --static .
+# then open http://localhost:8000 (progress syncs to ./.sync-data)
 ```
+
+`python3 -m http.server 8000` also works; progress then stays on the device.
 
 ## Question bank
 

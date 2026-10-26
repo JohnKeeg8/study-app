@@ -1,0 +1,14 @@
+[Unit]
+Description=Study App sync service (keeps progress on the server)
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /var/www/study-app/server/sync.py --port 8787
+# Runs as a throwaway system user; progress lives in /var/lib/study-app (created by systemd).
+DynamicUser=yes
+StateDirectory=study-app
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
