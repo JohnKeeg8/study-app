@@ -7,7 +7,7 @@ It's a Progressive Web App (plain HTML/CSS/JS; nothing to install to run it). On
 ## Features
 
 - **Learn by topic**: an in-depth study lesson for each of the 35 exam objectives (explanations, comparison tables, common mix-ups, key terms, exam tips), followed by a mini test with 2 questions from every section of the lesson, so passing means you understood the whole topic. Score 80% to pass and earn the topic's badge (+50 XP the first time); pass every topic in a domain for the domain 🏅. Retakes pull questions you haven't seen first, and results list the sections to re-read.
-- **Daily goal and streak**: answer 20 questions a day (adjustable: 10/20/30/50) to keep your 🔥 streak going. A ring and a 7-day strip show progress, with a celebration when you hit the goal.
+- **Daily goal and streak**: get 20 answers right each day (adjustable: 10/20/30/50) to keep your 🔥 streak going. Only correct answers count toward the goal. A ring and a 7-day strip show progress, with a celebration when you hit the goal.
 - **XP and combos**: +10 XP per correct answer, +5 bonus per answer once you're 5 in a row.
 - **Endless adaptive practice**: keeps going until you tap ✕. Each objective gets a weakness score from your last 20 answers on it, and objectives you struggle with come up far more often. New objectives get explored, and mastered ones still return occasionally for review. Questions are never repeated within a session, and a question you got right isn't shown again until its spaced-repetition review date (unless you've covered everything in your selected scope). Questions you missed come back in your next session.
 - **Instant feedback**: wrong answers show the correct answer and why. Correct answers have a "Why?" link.

@@ -1,5 +1,5 @@
 // Bump CACHE whenever app files or questions change so phones pick up the update.
-const CACHE = "study-app-v13";
+const CACHE = "study-app-v14";
 const ASSETS = [
   "./",
   "index.html",
